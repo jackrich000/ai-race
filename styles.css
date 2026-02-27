@@ -1,0 +1,271 @@
+/* Reset & base */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-primary: #0f1117;
+  --bg-secondary: #1a1d27;
+  --bg-tertiary: #242836;
+  --text-primary: #e8eaed;
+  --text-secondary: #9aa0a6;
+  --text-muted: #5f6368;
+  --border: #2d3140;
+  --accent: #6c9eff;
+  --accent-dim: rgba(108, 158, 255, 0.15);
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* Header */
+header {
+  text-align: center;
+  padding: 2.5rem 1.5rem 1.5rem;
+}
+
+header h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-top: 0.4rem;
+}
+
+/* Main container */
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1.5rem 2rem;
+}
+
+/* Controls row */
+.controls {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+}
+
+/* Mode toggle */
+.mode-toggle {
+  display: inline-flex;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.mode-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  padding: 0.5rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mode-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.mode-btn.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+/* Filter pills (used for both benchmark tabs and lab tabs) */
+.filter-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.filter-pill {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  color: var(--text-secondary);
+  padding: 0.4rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.filter-pill:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.filter-pill.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pill-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
+
+/* Chart container */
+.chart-container {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+  position: relative;
+  height: 420px;
+}
+
+/* Info card */
+.info-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+}
+
+.info-card h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.category-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--accent-dim);
+  color: var(--accent);
+  padding: 0.15rem 0.5rem;
+  border-radius: 100px;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+.info-card p {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.55;
+  margin-bottom: 0.5rem;
+}
+
+.info-card a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.825rem;
+  font-weight: 500;
+}
+
+.info-card a:hover {
+  text-decoration: underline;
+}
+
+/* Expandable benchmark list (frontier mode) */
+.benchmark-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.benchmark-item {
+  border-bottom: 1px solid var(--border);
+}
+
+.benchmark-item:last-child {
+  border-bottom: none;
+}
+
+.benchmark-item-header {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  padding: 0.6rem 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s ease;
+  text-align: left;
+}
+
+.benchmark-item-header:hover {
+  color: var(--accent);
+}
+
+.benchmark-item-header .pill-dot {
+  flex-shrink: 0;
+}
+
+.benchmark-item-name {
+  flex: 1;
+}
+
+.benchmark-item-header .category-badge {
+  margin-left: auto;
+  margin-right: 0.75rem;
+}
+
+.expand-icon {
+  color: var(--text-muted);
+  font-size: 1rem;
+  width: 1.25rem;
+  text-align: center;
+  flex-shrink: 0;
+  font-weight: 300;
+}
+
+.benchmark-item-detail {
+  padding: 0 0 0.75rem 1rem;
+}
+
+.benchmark-item-detail p {
+  margin-bottom: 0.35rem;
+}
+
+/* Footer */
+footer {
+  text-align: center;
+  padding: 1.5rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  header { padding: 1.5rem 1rem 1rem; }
+  header h1 { font-size: 1.35rem; }
+  main { padding: 0 1rem 1.5rem; }
+  .chart-container { height: 300px; padding: 1rem; }
+  .filter-pill { font-size: 0.75rem; padding: 0.35rem 0.75rem; }
+  .filter-pills { gap: 0.35rem; }
+}

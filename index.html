@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Benchmark Tracker</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>AI Benchmark Tracker</h1>
+    <p class="subtitle">Tracking frontier AI model performance across leading benchmarks over time</p>
+  </header>
+
+  <main>
+    <div class="controls">
+      <div class="mode-toggle" role="tablist">
+        <button class="mode-btn active" data-mode="frontier" role="tab" aria-selected="true">Frontier Progress</button>
+        <button class="mode-btn" data-mode="race" role="tab" aria-selected="false">Lab Race</button>
+      </div>
+    </div>
+
+    <div class="filter-pills" id="filterPills" role="tablist" aria-label="Filter selector">
+      <!-- Populated by app.js: benchmark tabs in race mode, lab tabs in frontier mode -->
+    </div>
+
+    <div class="chart-container">
+      <canvas id="benchmarkChart"></canvas>
+    </div>
+
+    <div class="info-card" id="infoCard">
+      <!-- Populated by app.js -->
+    </div>
+  </main>
+
+  <footer>
+    <p>Data is illustrative (dummy). Built to explore visualization design.</p>
+  </footer>
+
+  <script src="data-loader.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
