@@ -1,5 +1,5 @@
 // ─── State ───────────────────────────────────────────────────
-let currentBenchmark = "all"; // "all" = equal-weight average, or a benchmark key
+let currentBenchmark = null; // Set to first benchmark key on init
 let currentMode = "frontier"; // "frontier" | "race"
 let selectedLab = null;   // null = "All Labs", or a lab key like "openai"
 let chart = null;
@@ -21,7 +21,6 @@ const BENCHMARK_COLORS = {
   "arc-agi-1":  "#f59e0b",
   "arc-agi-2":  "#f97316",
   "hle":        "#8b5cf6",
-  "mmlu":       "#a78bfa",
   "gpqa":       "#06b6d4",
   "aime":       "#ef4444",
 };
@@ -31,13 +30,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     showLoading(true);
     await loadData(); // from data-loader.js
+    // Default to first benchmark key
+    if (!currentBenchmark || !BENCHMARKS[currentBenchmark]) {
+      currentBenchmark = Object.keys(BENCHMARKS)[0];
+    }
     renderModeToggle();
     renderFilterPills();
     renderChart();
     renderInfoArea();
     showLoading(false);
     document.querySelector("footer p").innerHTML =
-      'Data sourced from <a href="https://epoch.ai/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">Epoch AI</a>. Scores represent cumulative best per lab per quarter.';
+      'Data sourced from <a href="https://epoch.ai/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">Epoch AI</a>, <a href="https://www.swebench.com/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">SWE-bench</a>, <a href="https://arcprize.org/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">ARC Prize</a> &amp; <a href="https://artificialanalysis.ai/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">Artificial Analysis</a>. Scores represent cumulative best per lab per quarter.';
   } catch (err) {
     console.error("Failed to load data:", err);
     showError("Failed to load benchmark data. Please try refreshing the page.");
@@ -76,21 +79,6 @@ function renderFilterPills() {
 }
 
 function renderBenchmarkPills(container) {
-  // "All Benchmarks" pill
-  const allBtn = document.createElement("button");
-  allBtn.className = `filter-pill${currentBenchmark === "all" ? " active" : ""}`;
-  allBtn.dataset.key = "all";
-  allBtn.textContent = "All Benchmarks";
-  allBtn.addEventListener("click", () => {
-    currentBenchmark = "all";
-    container.querySelectorAll(".filter-pill").forEach(t => t.classList.remove("active"));
-    allBtn.classList.add("active");
-    isolatedIndex = null;
-    updateChart();
-    renderInfoArea();
-  });
-  container.appendChild(allBtn);
-
   // One pill per benchmark
   for (const [key, bench] of Object.entries(BENCHMARKS)) {
     const btn = document.createElement("button");
@@ -180,37 +168,13 @@ function renderModeToggle() {
 // ─── Chart ───────────────────────────────────────────────────
 function buildDatasets() {
   if (currentMode === "race") {
-    if (currentBenchmark === "all") {
-      // Equal-weight average across all benchmarks for each lab
-      return Object.entries(LABS).map(([labKey, lab]) => ({
-        label: lab.name,
-        data: TIME_LABELS.map((_, i) => {
-          let sum = 0;
-          let count = 0;
-          for (const benchData of Object.values(BENCHMARKS)) {
-            const val = benchData.scores[labKey][i];
-            if (val !== null) {
-              sum += val;
-              count++;
-            }
-          }
-          return count > 0 ? Math.round((sum / count) * 10) / 10 : null;
-        }),
-        borderColor: lab.color,
-        backgroundColor: lab.color + "33",
-        borderWidth: 2.5,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        pointBackgroundColor: lab.color,
-        tension: 0.3,
-        spanGaps: true,
-      }));
-    }
-
     const bench = BENCHMARKS[currentBenchmark];
+    if (!bench) return [];
+
     return Object.entries(LABS).map(([labKey, lab]) => ({
       label: lab.name,
-      data: bench.scores[labKey],
+      data: bench.scores[labKey].map(d => d ? d.score : null),
+      _models: bench.scores[labKey].map(d => d ? d.model : null),
       borderColor: lab.color,
       backgroundColor: lab.color + "33",
       borderWidth: 2.5,
@@ -226,21 +190,35 @@ function buildDatasets() {
     const labKeys = selectedLab ? [selectedLab] : Object.keys(LABS);
 
     return Object.entries(BENCHMARKS).map(([benchKey, benchData]) => {
-      const frontierData = TIME_LABELS.map((_, i) => {
-        let best = null;
+      const frontierData = [];
+      const frontierModels = [];
+      const frontierLabs = [];
+
+      for (let i = 0; i < TIME_LABELS.length; i++) {
+        let bestScore = null;
+        let bestModel = null;
+        let bestLab = null;
+
         for (const labKey of labKeys) {
-          const val = benchData.scores[labKey][i];
-          if (val !== null && (best === null || val > best)) {
-            best = val;
+          const entry = benchData.scores[labKey][i];
+          if (entry !== null && (bestScore === null || entry.score > bestScore)) {
+            bestScore = entry.score;
+            bestModel = entry.model;
+            bestLab = labKey;
           }
         }
-        return best;
-      });
+
+        frontierData.push(bestScore);
+        frontierModels.push(bestModel);
+        frontierLabs.push(bestLab);
+      }
 
       const color = BENCHMARK_COLORS[benchKey];
       return {
         label: benchData.name,
         data: frontierData,
+        _models: frontierModels,
+        _labs: frontierLabs,
         borderColor: color,
         backgroundColor: color + "33",
         borderWidth: 2.5,
@@ -294,7 +272,16 @@ function renderChart() {
             label: function(context) {
               const val = context.parsed.y;
               if (val === null) return null;
-              return `${context.dataset.label}: ${val.toFixed(1)}%`;
+              const model = context.dataset._models?.[context.dataIndex];
+              const labKey = context.dataset._labs?.[context.dataIndex];
+              const labName = labKey ? (LABS[labKey]?.name || labKey) : null;
+              let line = `${context.dataset.label}: ${val.toFixed(1)}%`;
+              if (model && labName) {
+                line += ` (${model}, ${labName})`;
+              } else if (model) {
+                line += ` (${model})`;
+              }
+              return line;
             },
           },
         },
@@ -347,7 +334,7 @@ function updateChart() {
 // In Lab Race, the currently selected benchmark is auto-expanded.
 function renderInfoArea() {
   const card = document.getElementById("infoCard");
-  const autoExpand = (currentMode === "race" && currentBenchmark !== "all") ? currentBenchmark : null;
+  const autoExpand = (currentMode === "race") ? currentBenchmark : null;
 
   let html = '<div class="benchmark-list">';
 

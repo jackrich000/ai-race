@@ -49,12 +49,6 @@ const BENCHMARK_META = {
     category: "Knowledge",
     link: "https://lastexam.ai/",
   },
-  "mmlu": {
-    name: "MMLU",
-    description: "Massive Multitask Language Understanding — 57 subjects from STEM, humanities, and social sciences. The longest-running LLM benchmark with the most historical data.",
-    category: "Knowledge",
-    link: "https://arxiv.org/abs/2009.03300",
-  },
   "gpqa": {
     name: "GPQA Diamond",
     description: "Graduate-level science questions in physics, chemistry, and biology that are \u2018Google-proof\u2019 — experts in the field achieve ~65% while non-experts score near random chance.",
@@ -74,7 +68,7 @@ const BENCHMARK_META = {
 let BENCHMARKS = {};
 
 async function loadData() {
-  const url = `${SUPABASE_URL}/rest/v1/benchmark_scores?select=benchmark,lab,quarter,score&order=benchmark,lab,quarter`;
+  const url = `${SUPABASE_URL}/rest/v1/benchmark_scores?select=benchmark,lab,quarter,score,model&order=benchmark,lab,quarter`;
 
   const response = await fetch(url, {
     headers: {
@@ -110,13 +104,13 @@ async function loadData() {
       scores[labKey] = new Array(TIME_LABELS.length).fill(null);
     }
 
-    // Fill in actual scores from Supabase
+    // Fill in actual scores from Supabase (objects with score + model)
     const benchRows = grouped[benchKey] || [];
     for (const row of benchRows) {
       const qi = quarterIndex[row.quarter];
       if (qi !== undefined && scores[row.lab]) {
         scores[row.lab][qi] = row.score !== null
-          ? Math.round(row.score * 10) / 10
+          ? { score: Math.round(row.score * 10) / 10, model: row.model || null }
           : null;
       }
     }
