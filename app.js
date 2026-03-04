@@ -1,8 +1,10 @@
 // ─── State ───────────────────────────────────────────────────
 let currentBenchmark = null; // Set to first benchmark key on init
-let currentMode = "frontier"; // "frontier" | "race"
+let currentMode = "frontier"; // "frontier" | "race" | "cost"
 let selectedLab = null;   // null = "All Labs", or a lab key like "openai"
+let currentCostBenchmark = null; // null = all, or "gpqa" / "mmlu-pro"
 let chart = null;
+let chartMode = null; // tracks which mode the chart was built for
 let isolatedIndex = null;
 
 // Category colors for tab dots
@@ -23,6 +25,12 @@ const BENCHMARK_COLORS = {
   "hle":        "#8b5cf6",
   "gpqa":       "#06b6d4",
   "aime":       "#ef4444",
+};
+
+// Colors for cost benchmarks
+const COST_BENCHMARK_COLORS = {
+  gpqa:       "#06b6d4",
+  "mmlu-pro": "#a855f7",
 };
 
 // ─── Initialize ──────────────────────────────────────────────
@@ -73,6 +81,8 @@ function renderFilterPills() {
 
   if (currentMode === "race") {
     renderBenchmarkPills(container);
+  } else if (currentMode === "cost") {
+    renderCostPills(container);
   } else {
     renderLabPills(container);
   }
@@ -145,6 +155,46 @@ function renderLabPills(container) {
   }
 }
 
+function renderCostPills(container) {
+  // "All Benchmarks" pill
+  const allBtn = document.createElement("button");
+  allBtn.className = `filter-pill${currentCostBenchmark === null ? " active" : ""}`;
+  allBtn.dataset.key = "all";
+  allBtn.textContent = "All Benchmarks";
+  allBtn.addEventListener("click", () => {
+    currentCostBenchmark = null;
+    container.querySelectorAll(".filter-pill").forEach(t => t.classList.remove("active"));
+    allBtn.classList.add("active");
+    isolatedIndex = null;
+    updateChart();
+  });
+  container.appendChild(allBtn);
+
+  // One pill per cost benchmark
+  for (const [key, meta] of Object.entries(COST_BENCHMARK_META)) {
+    const btn = document.createElement("button");
+    btn.className = `filter-pill${key === currentCostBenchmark ? " active" : ""}`;
+    btn.dataset.key = key;
+
+    const dot = document.createElement("span");
+    dot.className = "pill-dot";
+    dot.style.backgroundColor = meta.color;
+
+    btn.appendChild(dot);
+    btn.appendChild(document.createTextNode(`${meta.name} (${meta.thresholdLabel})`));
+
+    btn.addEventListener("click", () => {
+      currentCostBenchmark = key;
+      container.querySelectorAll(".filter-pill").forEach(t => t.classList.remove("active"));
+      btn.classList.add("active");
+      isolatedIndex = null;
+      updateChart();
+    });
+
+    container.appendChild(btn);
+  }
+}
+
 // ─── Mode toggle ─────────────────────────────────────────────
 function renderModeToggle() {
   document.querySelectorAll(".mode-btn").forEach(btn => {
@@ -158,6 +208,7 @@ function renderModeToggle() {
       btn.setAttribute("aria-selected", "true");
       isolatedIndex = null;
       selectedLab = null;
+      currentCostBenchmark = null;
       renderFilterPills();
       updateChart();
       renderInfoArea();
@@ -166,7 +217,37 @@ function renderModeToggle() {
 }
 
 // ─── Chart ───────────────────────────────────────────────────
+function buildCostDatasets() {
+  const keys = currentCostBenchmark ? [currentCostBenchmark] : Object.keys(COST_BENCHMARK_META);
+
+  return keys.map(key => {
+    const data = COST_DATA[key];
+    if (!data) return null;
+
+    const color = COST_BENCHMARK_COLORS[key];
+    return {
+      label: `${data.name} (${data.thresholdLabel})`,
+      data: data.entries.map(e => e ? e.price : null),
+      _models: data.entries.map(e => e ? e.model : null),
+      _labs: data.entries.map(e => e ? e.lab : null),
+      _scores: data.entries.map(e => e ? e.score : null),
+      borderColor: color,
+      backgroundColor: color + "33",
+      borderWidth: 2.5,
+      pointRadius: 4,
+      pointHoverRadius: 6,
+      pointBackgroundColor: color,
+      tension: 0.3,
+      spanGaps: true,
+    };
+  }).filter(Boolean);
+}
+
 function buildDatasets() {
+  if (currentMode === "cost") {
+    return buildCostDatasets();
+  }
+
   if (currentMode === "race") {
     const bench = BENCHMARKS[currentBenchmark];
     if (!bench) return [];
@@ -234,6 +315,61 @@ function buildDatasets() {
 
 function renderChart() {
   const ctx = document.getElementById("benchmarkChart").getContext("2d");
+  const isCost = currentMode === "cost";
+  chartMode = currentMode;
+
+  const yScale = isCost
+    ? {
+        type: "logarithmic",
+        grid: { color: "rgba(45, 49, 64, 0.5)" },
+        ticks: {
+          color: "#5f6368",
+          font: { size: 11 },
+          callback: val => {
+            if (val >= 1) return "$" + val.toFixed(0);
+            if (val >= 0.1) return "$" + val.toFixed(1);
+            return "$" + val.toFixed(2);
+          },
+        },
+      }
+    : {
+        min: 0,
+        max: 100,
+        grid: { color: "rgba(45, 49, 64, 0.5)" },
+        ticks: {
+          color: "#5f6368",
+          font: { size: 11 },
+          callback: val => val + "%",
+        },
+      };
+
+  const tooltipLabel = isCost
+    ? function(context) {
+        const val = context.parsed.y;
+        if (val === null) return null;
+        const model = context.dataset._models?.[context.dataIndex];
+        const lab = context.dataset._labs?.[context.dataIndex];
+        const score = context.dataset._scores?.[context.dataIndex];
+        let line = `${context.dataset.label}: $${val < 1 ? val.toFixed(3) : val.toFixed(2)}/M tokens`;
+        if (model) line += `\n  Model: ${model}`;
+        if (lab) line += ` (${lab})`;
+        if (score != null) line += `\n  Score: ${score}%`;
+        return line.split("\n");
+      }
+    : function(context) {
+        const val = context.parsed.y;
+        if (val === null) return null;
+        const model = context.dataset._models?.[context.dataIndex];
+        const labKey = context.dataset._labs?.[context.dataIndex];
+        const labName = labKey ? (LABS[labKey]?.name || labKey) : null;
+        let line = `${context.dataset.label}: ${val.toFixed(1)}%`;
+        if (model && labName) {
+          line += ` (${model}, ${labName})`;
+        } else if (model) {
+          line += ` (${model})`;
+        }
+        return line;
+      };
 
   chart = new Chart(ctx, {
     type: "line",
@@ -268,22 +404,7 @@ function renderChart() {
           borderWidth: 1,
           padding: 12,
           cornerRadius: 8,
-          callbacks: {
-            label: function(context) {
-              const val = context.parsed.y;
-              if (val === null) return null;
-              const model = context.dataset._models?.[context.dataIndex];
-              const labKey = context.dataset._labs?.[context.dataIndex];
-              const labName = labKey ? (LABS[labKey]?.name || labKey) : null;
-              let line = `${context.dataset.label}: ${val.toFixed(1)}%`;
-              if (model && labName) {
-                line += ` (${model}, ${labName})`;
-              } else if (model) {
-                line += ` (${model})`;
-              }
-              return line;
-            },
-          },
+          callbacks: { label: tooltipLabel },
         },
       },
       scales: {
@@ -291,16 +412,7 @@ function renderChart() {
           grid: { color: "rgba(45, 49, 64, 0.5)" },
           ticks: { color: "#5f6368", font: { size: 11 } },
         },
-        y: {
-          min: 0,
-          max: 100,
-          grid: { color: "rgba(45, 49, 64, 0.5)" },
-          ticks: {
-            color: "#5f6368",
-            font: { size: 11 },
-            callback: val => val + "%",
-          },
-        },
+        y: yScale,
       },
     },
   });
@@ -324,6 +436,16 @@ function handleLegendClick(_e, legendItem, legend) {
 
 function updateChart() {
   isolatedIndex = null;
+
+  // If switching between cost and non-cost, destroy and recreate (scale type changes)
+  const needsCost = currentMode === "cost";
+  const hadCost = chartMode === "cost";
+  if (needsCost !== hadCost) {
+    chart.destroy();
+    renderChart();
+    return;
+  }
+
   chart.data.datasets = buildDatasets();
   chart.data.datasets.forEach((_, i) => chart.setDatasetVisibility(i, true));
   chart.update();
@@ -332,8 +454,57 @@ function updateChart() {
 // ─── Info area ───────────────────────────────────────────────
 // Always renders the same expandable benchmark list in both modes.
 // In Lab Race, the currently selected benchmark is auto-expanded.
+function renderCostInfoArea(card) {
+  let html = '<div class="cost-headlines">';
+
+  for (const [key, meta] of Object.entries(COST_BENCHMARK_META)) {
+    const data = COST_DATA[key];
+    if (!data) continue;
+
+    // Find first and last non-null entries
+    const startIdx = TIME_LABELS.indexOf(meta.startQuarter);
+    let firstEntry = null, lastEntry = null;
+    let firstQ = null, lastQ = null;
+
+    for (let i = startIdx; i < data.entries.length; i++) {
+      if (data.entries[i]) {
+        if (!firstEntry) { firstEntry = data.entries[i]; firstQ = TIME_LABELS[i]; }
+        lastEntry = data.entries[i]; lastQ = TIME_LABELS[i];
+      }
+    }
+
+    if (firstEntry && lastEntry && firstEntry.price > 0 && lastEntry.price > 0) {
+      const decline = Math.round(firstEntry.price / lastEntry.price);
+      const fmtPrice = p => p >= 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(3)}`;
+      html += `
+        <div class="cost-headline-item">
+          <span class="pill-dot" style="background-color: ${meta.color}"></span>
+          <span class="cost-headline-label">${meta.name} (${meta.thresholdLabel}):</span>
+          <span class="cost-decline">${decline}x cheaper</span>
+          <span class="cost-range">since ${firstQ} (${fmtPrice(firstEntry.price)} \u2192 ${fmtPrice(lastEntry.price)})</span>
+        </div>
+      `;
+    }
+  }
+
+  html += '</div>';
+  html += `
+    <div class="cost-explanation">
+      <p>Shows the cheapest model (any lab) scoring above a fixed threshold on each benchmark, measured in $/M tokens (blended 3:1 input:output). Thresholds are set at what the best model scored when each benchmark launched. Uses cumulative minimum \u2014 once a cheaper model exists, the price floor never rises.</p>
+    </div>
+  `;
+
+  card.innerHTML = html;
+}
+
 function renderInfoArea() {
   const card = document.getElementById("infoCard");
+
+  if (currentMode === "cost") {
+    renderCostInfoArea(card);
+    return;
+  }
+
   const autoExpand = (currentMode === "race") ? currentBenchmark : null;
 
   let html = '<div class="benchmark-list">';

@@ -88,6 +88,12 @@ const ARC_LAB_PATTERNS = [
   [/^glm/i,          "chinese"],
 ];
 
+// Cost of Intelligence: benchmarks with price thresholds
+const COST_BENCHMARKS = {
+  gpqa:       { evalField: "gpqa",     threshold: 36, startQuarter: "Q4 2023" },
+  "mmlu-pro": { evalField: "mmlu_pro", threshold: 73, startQuarter: "Q2 2024" },
+};
+
 // Epoch: CSV files to process (AIME + ARC-AGI + SWE-bench for historical data)
 const EPOCH_BENCHMARK_FILES = {
   "otis_mock_aime_2024_2025.csv": { key: "aime",      scoreCol: "mean_score" },
@@ -162,6 +168,36 @@ function computeCumulativeBest(dataPoints, quarters) {
       const dp = dataPoints[dpIndex];
       if (best === null || dp.score > best.score) {
         best = { score: dp.score, model: dp.model, source: dp.source };
+      }
+      dpIndex++;
+    }
+
+    result[quarter] = best ? { ...best } : null;
+  }
+
+  return result;
+}
+
+/**
+ * Compute cumulative minimum price per quarter (for cost tracking).
+ * @param {Array<{date: Date, price: number, model: string, lab: string, score: number}>} dataPoints
+ * @param {string[]} quarters
+ * @returns {Object<string, {price: number, model: string, lab: string, score: number}|null>}
+ */
+function computeCumulativeMin(dataPoints, quarters) {
+  dataPoints.sort((a, b) => a.date - b.date);
+
+  const result = {};
+  let best = null;
+  let dpIndex = 0;
+
+  for (const quarter of quarters) {
+    const end = quarterEndDate(quarter);
+
+    while (dpIndex < dataPoints.length && dataPoints[dpIndex].date <= end) {
+      const dp = dataPoints[dpIndex];
+      if (best === null || dp.price < best.price) {
+        best = { price: dp.price, model: dp.model, lab: dp.lab, score: dp.score };
       }
       dpIndex++;
     }
@@ -484,6 +520,149 @@ async function fetchEpoch() {
   return results;
 }
 
+// ─── Source 5: Cost data (AA pricing + Epoch GPQA scores) ─────
+
+async function fetchCostData() {
+  console.log("   [Cost] Fetching AA pricing data...");
+  const response = await fetchJSON(
+    "https://artificialanalysis.ai/api/v2/data/llms/models",
+    { "x-api-key": AA_API_KEY }
+  );
+
+  const models = response.data || response;
+  if (!Array.isArray(models)) {
+    console.warn("   [Cost] WARN: Unexpected AA response structure");
+    return [];
+  }
+
+  const results = [];
+
+  // ── Part 1: AA models with both score and price (all benchmarks) ──
+  let aaCount = 0;
+  // Also build a price lookup for cross-referencing with Epoch
+  // Key: release_date string (YYYY-MM-DD) + "|" + lowercase lab name
+  const aaPriceLookup = new Map();
+
+  for (const model of models) {
+    const releaseDate = model.release_date ? new Date(model.release_date) : null;
+    if (!releaseDate || isNaN(releaseDate.getTime())) continue;
+
+    const pricing = model.pricing || {};
+    const price = pricing.price_1m_blended_3_to_1;
+    if (price == null || price <= 0) continue;
+
+    const modelName = model.name || model.slug || "Unknown";
+    const lab = model.model_creator?.name || "Unknown";
+
+    // Store in price lookup for Epoch cross-reference
+    const dateStr = model.release_date;
+    const labLower = lab.toLowerCase();
+    const lookupKey = `${dateStr}|${labLower}`;
+    // Keep cheapest price per date+lab (some labs have multiple models same day)
+    if (!aaPriceLookup.has(lookupKey) || price < aaPriceLookup.get(lookupKey).price) {
+      aaPriceLookup.set(lookupKey, { price, name: modelName, lab });
+    }
+    // Also store by model name for direct matching
+    aaPriceLookup.set(`name|${modelName.toLowerCase()}`, { price, name: modelName, lab, date: releaseDate });
+
+    const evals = model.evaluations || {};
+    for (const [benchKey, config] of Object.entries(COST_BENCHMARKS)) {
+      const rawScore = evals[config.evalField];
+      if (rawScore == null) continue;
+      const score = rawScore * 100;
+      if (score < config.threshold) continue;
+
+      results.push({
+        benchmark: benchKey,
+        date: releaseDate,
+        price,
+        score: Math.round(score * 10) / 10,
+        model: modelName,
+        lab,
+      });
+      aaCount++;
+    }
+  }
+
+  console.log(`   [Cost] ${aaCount} data points from AA (score+price)`);
+
+  // ── Part 2: Epoch GPQA scores cross-referenced with AA prices ──
+  // Epoch has GPQA scores for older models (GPT-4 Turbo etc.) that AA lacks
+  console.log("   [Cost] Fetching Epoch GPQA scores for cross-reference...");
+  let epochCount = 0;
+  try {
+    const { zipPath, tmpDir } = await downloadFile("https://epoch.ai/data/benchmark_data.zip");
+    const zip = new AdmZip(zipPath);
+    const gpqaEntry = zip.getEntries().find(e => path.basename(e.entryName) === "gpqa_diamond.csv");
+
+    if (gpqaEntry) {
+      const records = parse(gpqaEntry.getData().toString("utf-8"), {
+        columns: true, skip_empty_lines: true, trim: true, relax_column_count: true,
+      });
+
+      const gpqaConfig = COST_BENCHMARKS["gpqa"];
+
+      for (const row of records) {
+        const rawScore = parseFloat(row["mean_score"]);
+        if (isNaN(rawScore)) continue;
+        const score = rawScore <= 1.0 ? rawScore * 100 : rawScore;
+        if (score < gpqaConfig.threshold) continue;
+
+        const dateStr = row["Release date"];
+        if (!dateStr) continue;
+        const releaseDate = new Date(dateStr);
+        if (isNaN(releaseDate.getTime())) continue;
+
+        const epochOrg = row["Organization"] || "";
+
+        // Try to find AA price: match by date + lab
+        const orgLower = epochOrg.toLowerCase().split(",")[0].trim();
+        const lookupKey = `${dateStr}|${orgLower}`;
+        let match = aaPriceLookup.get(lookupKey);
+
+        // Fallback: try common org name variations
+        if (!match) {
+          const orgVariations = {
+            "meta ai": "meta",
+            "google deepmind": "google",
+            "mistral ai": "mistral",
+          };
+          const altOrg = orgVariations[orgLower];
+          if (altOrg) match = aaPriceLookup.get(`${dateStr}|${altOrg}`);
+        }
+
+        if (!match) continue;
+
+        // Check we don't already have an AA data point for this exact model+date
+        const isDuplicate = results.some(r =>
+          r.benchmark === "gpqa" &&
+          r.date.getTime() === releaseDate.getTime() &&
+          r.lab.toLowerCase() === match.lab.toLowerCase()
+        );
+        if (isDuplicate) continue;
+
+        results.push({
+          benchmark: "gpqa",
+          date: releaseDate,
+          price: match.price,
+          score: Math.round(score * 10) / 10,
+          model: match.name,
+          lab: match.lab,
+        });
+        epochCount++;
+      }
+    }
+
+    try { fs.rmSync(tmpDir, { recursive: true }); } catch (_) {}
+  } catch (err) {
+    console.warn("   [Cost] WARN: Epoch cross-reference failed:", err.message);
+  }
+
+  console.log(`   [Cost] ${epochCount} additional GPQA data points from Epoch cross-reference`);
+  console.log(`   [Cost] ${results.length} total cost data points`);
+  return results;
+}
+
 function findCol(headers, preferred, candidates) {
   if (preferred && headers.includes(preferred)) return preferred;
   for (const c of candidates) {
@@ -512,13 +691,31 @@ async function main() {
     process.exit(1);
   }
 
+  // Check cost_intelligence table exists
+  const { error: costSchemaErr } = await supabase
+    .from("cost_intelligence")
+    .select("benchmark")
+    .limit(1);
+
+  if (costSchemaErr) {
+    console.error("\n   cost_intelligence table not found! Run in the Supabase SQL editor:");
+    console.error("     CREATE TABLE cost_intelligence (");
+    console.error("       id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,");
+    console.error("       benchmark TEXT NOT NULL, quarter TEXT NOT NULL,");
+    console.error("       price NUMERIC, model TEXT, lab TEXT, score NUMERIC,");
+    console.error("       threshold NUMERIC NOT NULL, UNIQUE (benchmark, quarter)");
+    console.error("     );");
+    process.exit(1);
+  }
+
   // Fetch from all 4 sources in parallel
   console.log("\n1. Fetching from all sources...");
-  const [aaData, sweData, arcData, epochData] = await Promise.all([
+  const [aaData, sweData, arcData, epochData, costData] = await Promise.all([
     fetchArtificialAnalysis().catch(err => { console.error("   [AA] FAILED:", err.message); return []; }),
     fetchSWEBench().catch(err => { console.error("   [SWE] FAILED:", err.message); return []; }),
     fetchARCPrize().catch(err => { console.error("   [ARC] FAILED:", err.message); return []; }),
     fetchEpoch().catch(err => { console.error("   [Epoch] FAILED:", err.message); return []; }),
+    fetchCostData().catch(err => { console.error("   [Cost] FAILED:", err.message); return []; }),
   ]);
 
   // Merge all data points by benchmark
@@ -610,6 +807,67 @@ async function main() {
   }
 
   console.log(`   Upserted ${allRows.length} rows successfully.`);
+
+  // ─── Cost of Intelligence processing ────────────────────────
+  console.log("\n4. Processing cost data...");
+
+  // Group cost data by benchmark
+  const costByBenchmark = {};
+  for (const dp of costData) {
+    if (!costByBenchmark[dp.benchmark]) costByBenchmark[dp.benchmark] = [];
+    costByBenchmark[dp.benchmark].push(dp);
+  }
+
+  const costRows = [];
+  for (const [benchKey, config] of Object.entries(COST_BENCHMARKS)) {
+    const points = costByBenchmark[benchKey] || [];
+    const cumulMin = computeCumulativeMin(points, QUARTERS);
+
+    const startIdx = QUARTERS.indexOf(config.startQuarter);
+
+    for (const [quarter, best] of Object.entries(cumulMin)) {
+      const qi = QUARTERS.indexOf(quarter);
+      const isBeforeStart = qi < startIdx;
+
+      costRows.push({
+        benchmark: benchKey,
+        quarter,
+        price: isBeforeStart ? null : (best ? Math.round(best.price * 1000) / 1000 : null),
+        model: isBeforeStart ? null : (best?.model || null),
+        lab: isBeforeStart ? null : (best?.lab || null),
+        score: isBeforeStart ? null : (best?.score || null),
+        threshold: config.threshold,
+      });
+    }
+
+    const validPoints = Object.entries(cumulMin)
+      .filter(([q]) => QUARTERS.indexOf(q) >= startIdx)
+      .filter(([, v]) => v !== null);
+    if (validPoints.length > 0) {
+      const first = validPoints[0][1];
+      const last = validPoints[validPoints.length - 1][1];
+      const decline = first.price / last.price;
+      console.log(`   ${benchKey}: ${validPoints.length} quarters, $${first.price.toFixed(2)} → $${last.price.toFixed(2)} (${decline.toFixed(0)}x decline)`);
+    } else {
+      console.log(`   ${benchKey}: no data points above threshold`);
+    }
+  }
+
+  // Upsert cost data
+  console.log(`\n5. Upserting ${costRows.length} cost rows to Supabase...`);
+  for (let i = 0; i < costRows.length; i += BATCH_SIZE) {
+    const batch = costRows.slice(i, i + BATCH_SIZE);
+    const { error } = await supabase
+      .from("cost_intelligence")
+      .upsert(batch, { onConflict: "benchmark,quarter" });
+
+    if (error) {
+      console.error(`   Cost upsert FAILED:`, error.message);
+      process.exit(1);
+    }
+  }
+
+  console.log(`   Upserted ${costRows.length} cost rows successfully.`);
   console.log("\nDone!");
 }
 
