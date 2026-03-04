@@ -63,11 +63,28 @@ const BENCHMARK_META = {
   },
 };
 
+// Cost of Intelligence metadata
+const COST_BENCHMARK_META = {
+  gpqa: {
+    name: "GPQA Diamond", threshold: 36, thresholdLabel: "36%",
+    description: "Best-in-the-world science reasoning, Nov 2023",
+    context: "When GPQA Diamond launched, GPT-4 scored 35.7%",
+    color: "#06b6d4", startQuarter: "Q4 2023",
+  },
+  "mmlu-pro": {
+    name: "MMLU-Pro", threshold: 73, thresholdLabel: "73%",
+    description: "Best-in-the-world academic knowledge, Jun 2024",
+    context: "When MMLU-Pro launched, GPT-4o scored 72.6%",
+    color: "#a855f7", startQuarter: "Q2 2024",
+  },
+};
+
 // ─── Data loading ───────────────────────────────────────────────
 
 let BENCHMARKS = {};
+let COST_DATA = {};
 
-async function loadData() {
+async function loadBenchmarkScores() {
   const url = `${SUPABASE_URL}/rest/v1/benchmark_scores?select=benchmark,lab,quarter,score,model&order=benchmark,lab,quarter`;
 
   const response = await fetch(url, {
@@ -117,4 +134,47 @@ async function loadData() {
 
     BENCHMARKS[benchKey] = { ...meta, scores };
   }
+}
+
+async function loadCostData() {
+  const url = `${SUPABASE_URL}/rest/v1/cost_intelligence?select=benchmark,quarter,price,model,lab,score,threshold&order=benchmark,quarter`;
+
+  const response = await fetch(url, {
+    headers: {
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+  });
+
+  if (!response.ok) {
+    console.warn("Cost data fetch failed:", response.status);
+    return;
+  }
+
+  const rows = await response.json();
+
+  const quarterIndex = {};
+  TIME_LABELS.forEach((q, i) => quarterIndex[q] = i);
+
+  COST_DATA = {};
+  for (const [benchKey, meta] of Object.entries(COST_BENCHMARK_META)) {
+    COST_DATA[benchKey] = {
+      ...meta,
+      entries: new Array(TIME_LABELS.length).fill(null),
+    };
+  }
+
+  for (const row of rows) {
+    if (!COST_DATA[row.benchmark]) continue;
+    const qi = quarterIndex[row.quarter];
+    if (qi === undefined) continue;
+
+    COST_DATA[row.benchmark].entries[qi] = row.price !== null
+      ? { price: parseFloat(row.price), model: row.model, lab: row.lab, score: parseFloat(row.score) }
+      : null;
+  }
+}
+
+async function loadData() {
+  await Promise.all([loadBenchmarkScores(), loadCostData()]);
 }
