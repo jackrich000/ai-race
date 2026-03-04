@@ -29,7 +29,7 @@ if (!AA_API_KEY) {
   process.exit(1);
 }
 
-const LAB_KEYS = ["openai", "anthropic", "google", "xai", "meta"];
+const LAB_KEYS = ["openai", "anthropic", "google", "xai", "chinese"];
 
 const QUARTERS = [
   "Q1 2023", "Q2 2023", "Q3 2023", "Q4 2023",
@@ -51,15 +51,27 @@ const BENCHMARK_START_QUARTER = {
 
 // Org name normalization (covers all sources)
 const ORG_MAP = {
-  "openai":          "openai",
-  "anthropic":       "anthropic",
-  "google deepmind": "google",
-  "google":          "google",
-  "xai":             "xai",
-  "x.ai":            "xai",
-  "meta ai":         "meta",
-  "meta":            "meta",
-  "meta platforms":  "meta",
+  "openai":              "openai",
+  "anthropic":           "anthropic",
+  "google deepmind":     "google",
+  "google":              "google",
+  "xai":                 "xai",
+  "x.ai":                "xai",
+  "deepseek":            "chinese",
+  "alibaba":             "chinese",
+  "kimi":                "chinese",
+  "minimax":             "chinese",
+  "z ai":                "chinese",
+  "z.ai":                "chinese",
+  "z-ai":                "chinese",
+  "z.ai (zhipu ai)":     "chinese",
+  "zhipu ai":            "chinese",
+  "bytedance":           "chinese",
+  "bytedance seed":      "chinese",
+  "baidu":               "chinese",
+  "moonshot":            "chinese",
+  "moonshot ai":         "chinese",
+  "qwen":                "chinese",
 };
 
 // ARC Prize: derive org from modelId prefix (start-anchored to reject third-party scaffolds)
@@ -69,7 +81,11 @@ const ARC_LAB_PATTERNS = [
   [/^o[134][-_ ]/i,  "openai"],
   [/^gemini/i,       "google"],
   [/^grok/i,         "xai"],
-  [/^llama/i,        "meta"],
+  [/^deepseek/i,     "chinese"],
+  [/^qwen/i,         "chinese"],
+  [/^kimi/i,         "chinese"],
+  [/^minimax/i,      "chinese"],
+  [/^glm/i,          "chinese"],
 ];
 
 // Epoch: CSV files to process (AIME + ARC-AGI + SWE-bench for historical data)

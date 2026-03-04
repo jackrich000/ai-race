@@ -20,7 +20,7 @@ const LABS = {
   anthropic: { name: "Anthropic",       color: "#d4a574" },
   google:    { name: "Google DeepMind", color: "#4285f4" },
   xai:       { name: "xAI",            color: "#ef4444" },
-  meta:      { name: "Meta",           color: "#a855f7" },
+  chinese:   { name: "Chinese Leaders", color: "#a855f7" },
 };
 
 // Benchmark metadata — descriptions, categories, links (these rarely change)
