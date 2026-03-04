@@ -252,6 +252,157 @@ main {
   margin-bottom: 0.35rem;
 }
 
+/* Analysis panel */
+.analysis-panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  margin-top: 1.25rem;
+}
+
+.analysis-panel h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.analysis-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.time-range-pills {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.custom-range {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.custom-range select {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.custom-range span {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.generate-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.5rem 1.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.generate-btn:hover {
+  opacity: 0.85;
+}
+
+.generate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.analysis-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.analysis-output {
+  position: relative;
+  margin-top: 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+}
+
+.analysis-text {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+.analysis-text h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0.75rem 0 0.35rem;
+}
+
+.analysis-text h2:first-child {
+  margin-top: 0;
+}
+
+.analysis-text strong {
+  color: var(--accent);
+}
+
+.analysis-text ul {
+  padding-left: 1.25rem;
+  margin: 0.35rem 0;
+}
+
+.analysis-text li {
+  margin-bottom: 0.25rem;
+}
+
+.analysis-text p {
+  margin-bottom: 0.5rem;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.copy-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
 /* Footer */
 footer {
   text-align: center;
