@@ -280,9 +280,12 @@ main {
 }
 
 .custom-range {
-  display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.custom-range:not([hidden]) {
+  display: flex;
 }
 
 .custom-range select {
@@ -321,12 +324,15 @@ main {
 }
 
 .analysis-loading {
-  display: flex;
   align-items: center;
   gap: 0.6rem;
   margin-top: 1rem;
   color: var(--text-secondary);
   font-size: 0.875rem;
+}
+
+.analysis-loading:not([hidden]) {
+  display: flex;
 }
 
 .spinner {
