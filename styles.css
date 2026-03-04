@@ -259,6 +259,7 @@ main {
   border-radius: var(--radius-lg);
   padding: 1.25rem 1.5rem;
   margin-top: 1.25rem;
+  margin-bottom: 1.25rem;
 }
 
 .analysis-panel h3 {
