@@ -32,6 +32,32 @@
     <div class="info-card" id="infoCard">
       <!-- Populated by app.js -->
     </div>
+
+    <div class="analysis-panel" id="analysisPanel">
+      <h3>AI Analysis</h3>
+      <div class="analysis-controls">
+        <div class="time-range-pills">
+          <button class="filter-pill active" data-range="3">3 months</button>
+          <button class="filter-pill" data-range="6">6 months</button>
+          <button class="filter-pill" data-range="12">12 months</button>
+          <button class="filter-pill" data-range="custom">Custom</button>
+        </div>
+        <div class="custom-range" id="customRange" hidden>
+          <select id="rangeFrom"></select>
+          <span>to</span>
+          <select id="rangeTo"></select>
+        </div>
+        <button class="generate-btn" id="generateBtn">Generate Analysis</button>
+      </div>
+      <div class="analysis-loading" id="analysisLoading" hidden>
+        <div class="spinner"></div>
+        <span>Analyzing trends…</span>
+      </div>
+      <div class="analysis-output" id="analysisOutput" hidden>
+        <button class="copy-btn" id="copyBtn">Copy to clipboard</button>
+        <div class="analysis-text" id="analysisText"></div>
+      </div>
+    </div>
   </main>
 
   <footer>

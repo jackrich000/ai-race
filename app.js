@@ -381,3 +381,137 @@ function renderInfoArea() {
     });
   });
 }
+
+// ─── AI Analysis ──────────────────────────────────────────────
+(function initAnalysis() {
+  let selectedRange = 3;
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const pills = document.querySelectorAll(".time-range-pills .filter-pill");
+    const customRange = document.getElementById("customRange");
+    const rangeFrom = document.getElementById("rangeFrom");
+    const rangeTo = document.getElementById("rangeTo");
+    const generateBtn = document.getElementById("generateBtn");
+    const outputEl = document.getElementById("analysisOutput");
+    const textEl = document.getElementById("analysisText");
+    const loadingEl = document.getElementById("analysisLoading");
+    const copyBtn = document.getElementById("copyBtn");
+
+    // Populate quarter dropdowns
+    TIME_LABELS.forEach(q => {
+      rangeFrom.appendChild(new Option(q, q));
+      rangeTo.appendChild(new Option(q, q));
+    });
+    rangeTo.value = TIME_LABELS[TIME_LABELS.length - 1];
+    if (TIME_LABELS.length > 4) rangeFrom.value = TIME_LABELS[TIME_LABELS.length - 5];
+
+    // Range pill clicks
+    pills.forEach(pill => {
+      pill.addEventListener("click", () => {
+        pills.forEach(p => p.classList.remove("active"));
+        pill.classList.add("active");
+        const range = pill.dataset.range;
+        if (range === "custom") {
+          selectedRange = "custom";
+          customRange.hidden = false;
+        } else {
+          selectedRange = parseInt(range);
+          customRange.hidden = true;
+        }
+      });
+    });
+
+    generateBtn.addEventListener("click", () => generateAnalysis());
+    copyBtn.addEventListener("click", () => copyAnalysis());
+
+    function getQuarterRange() {
+      if (selectedRange === "custom") {
+        const fromIdx = TIME_LABELS.indexOf(rangeFrom.value);
+        const toIdx = TIME_LABELS.indexOf(rangeTo.value);
+        return { startIdx: Math.min(fromIdx, toIdx), endIdx: Math.max(fromIdx, toIdx) };
+      }
+      // Map months to quarters: 3mo = 1Q, 6mo = 2Q, 12mo = 4Q
+      const quartersBack = Math.ceil(selectedRange / 3);
+      const endIdx = TIME_LABELS.length - 1;
+      const startIdx = Math.max(0, endIdx - quartersBack);
+      return { startIdx, endIdx };
+    }
+
+    function getDataForRange(startIdx, endIdx) {
+      let lines = [];
+      for (const [benchKey, bench] of Object.entries(BENCHMARKS)) {
+        lines.push(`\n## ${bench.name} (${bench.category})`);
+        for (const [labKey, lab] of Object.entries(LABS)) {
+          const scores = bench.scores[labKey].slice(startIdx, endIdx + 1);
+          const labels = TIME_LABELS.slice(startIdx, endIdx + 1);
+          const parts = scores.map((d, i) =>
+            d ? `${labels[i]}: ${d.score}%${d.model ? " (" + d.model + ")" : ""}` : `${labels[i]}: -`
+          );
+          lines.push(`${lab.name}: ${parts.join(" | ")}`);
+        }
+      }
+      return lines.join("\n");
+    }
+
+    async function generateAnalysis() {
+      const { startIdx, endIdx } = getQuarterRange();
+      const startQ = TIME_LABELS[startIdx];
+      const endQ = TIME_LABELS[endIdx];
+      const benchmarkData = getDataForRange(startIdx, endIdx);
+
+      generateBtn.disabled = true;
+      loadingEl.hidden = false;
+      outputEl.hidden = true;
+
+      try {
+        const resp = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ startQuarter: startQ, endQuarter: endQ, benchmarkData }),
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${resp.status}`);
+        }
+
+        const { analysis } = await resp.json();
+        textEl.style.color = "";
+        textEl.innerHTML = renderMarkdown(analysis);
+        outputEl.hidden = false;
+      } catch (err) {
+        textEl.textContent = "Error: " + err.message;
+        textEl.style.color = "#ef4444";
+        outputEl.hidden = false;
+      } finally {
+        generateBtn.disabled = false;
+        loadingEl.hidden = true;
+      }
+    }
+
+    function copyAnalysis() {
+      const text = textEl.innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        copyBtn.textContent = "Copied!";
+        setTimeout(() => { copyBtn.textContent = "Copy to clipboard"; }, 2000);
+      });
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function renderMarkdown(md) {
+      return escapeHtml(md)
+        .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+        .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+        .replace(/\*(.+?)\*/g, "<em>$1</em>")
+        .replace(/^- (.+)$/gm, "<li>$1</li>")
+        .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
+        .replace(/\n{2,}/g, "</p><p>")
+        .replace(/^(?!<[hup]|<li|<ul)(.+)$/gm, "<p>$1</p>")
+        .replace(/<p><\/p>/g, "");
+    }
+  });
+})();
