@@ -41,6 +41,14 @@ const QUARTERS = [
 // Current quarter midpoint for ARC Prize entries without extractable dates
 const CURRENT_QUARTER_DATE = new Date("2026-02-15");
 
+// Earliest valid quarter per benchmark (scores before this are nulled out).
+// Prevents retroactive evaluations from appearing before a benchmark existed.
+const BENCHMARK_START_QUARTER = {
+  "hle":       "Q1 2025",  // Released January 2025
+  "gpqa":      "Q4 2023",  // Published November 2023
+  "arc-agi-2": "Q1 2025",  // Released as part of ARC Prize 2025
+};
+
 // Org name normalization (covers all sources)
 const ORG_MAP = {
   "openai":          "openai",
@@ -73,6 +81,13 @@ const EPOCH_BENCHMARK_FILES = {
 };
 
 // ─── Helpers ─────────────────────────────────────────────────
+
+/** Compare quarter strings like "Q1 2023" numerically. Returns negative/zero/positive. */
+function compareQuarters(a, b) {
+  const [qa, ya] = [parseInt(a[1]), parseInt(a.substring(3))];
+  const [qb, yb] = [parseInt(b[1]), parseInt(b.substring(3))];
+  return ya !== yb ? ya - yb : qa - qb;
+}
 
 function normalizeOrg(raw) {
   if (!raw) return null;
@@ -515,14 +530,17 @@ async function main() {
       const points = labsData[lab] || [];
       const cumulBest = computeCumulativeBest(points, QUARTERS);
 
+      const startQuarter = BENCHMARK_START_QUARTER[benchKey];
       for (const [quarter, best] of Object.entries(cumulBest)) {
+        // Null out scores before the benchmark existed
+        const tooEarly = startQuarter && compareQuarters(quarter, startQuarter) < 0;
         allRows.push({
           benchmark: benchKey,
           lab,
           quarter,
-          score: best !== null ? Math.round(best.score * 10) / 10 : null,
-          model: best?.model || null,
-          source: best?.source || null,
+          score: best !== null && !tooEarly ? Math.round(best.score * 10) / 10 : null,
+          model: best !== null && !tooEarly ? best.model || null : null,
+          source: best !== null && !tooEarly ? best.source || null : null,
         });
       }
     }
