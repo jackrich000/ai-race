@@ -31,15 +31,29 @@ if (!AA_API_KEY) {
 
 const LAB_KEYS = ["openai", "anthropic", "google", "xai", "chinese"];
 
-const QUARTERS = [
-  "Q1 2023", "Q2 2023", "Q3 2023", "Q4 2023",
-  "Q1 2024", "Q2 2024", "Q3 2024", "Q4 2024",
-  "Q1 2025", "Q2 2025", "Q3 2025", "Q4 2025",
-  "Q1 2026",
-];
+// Generate quarters from Q1 2023 through the current quarter
+function generateQuarters() {
+  const now = new Date();
+  const endYear = now.getFullYear();
+  const endQ = Math.ceil((now.getMonth() + 1) / 3);
+  const quarters = [];
+  for (let y = 2023; y <= endYear; y++) {
+    for (let q = 1; q <= 4; q++) {
+      quarters.push(`Q${q} ${y}`);
+      if (y === endYear && q === endQ) return quarters;
+    }
+  }
+  return quarters;
+}
+
+const QUARTERS = generateQuarters();
 
 // Current quarter midpoint for ARC Prize entries without extractable dates
-const CURRENT_QUARTER_DATE = new Date("2026-02-15");
+const now = new Date();
+const curQ = Math.ceil((now.getMonth() + 1) / 3);
+const curQStart = new Date(now.getFullYear(), (curQ - 1) * 3, 1);
+const curQEnd = new Date(now.getFullYear(), curQ * 3, 0);
+const CURRENT_QUARTER_DATE = new Date((curQStart.getTime() + curQEnd.getTime()) / 2);
 
 // Earliest valid quarter per benchmark (scores before this are nulled out).
 // Prevents retroactive evaluations from appearing before a benchmark existed.
