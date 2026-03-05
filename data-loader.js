@@ -8,12 +8,20 @@ const SUPABASE_ANON_KEY = "sb_publishable_NW3JPCH8VQ0_ym-UFnGavw_JCVcDDp9";
 
 // ─── Static config ──────────────────────────────────────────────
 
-const TIME_LABELS = [
-  "Q1 2023", "Q2 2023", "Q3 2023", "Q4 2023",
-  "Q1 2024", "Q2 2024", "Q3 2024", "Q4 2024",
-  "Q1 2025", "Q2 2025", "Q3 2025", "Q4 2025",
-  "Q1 2026",
-];
+// Generate quarters from Q1 2023 through the current quarter
+const TIME_LABELS = (() => {
+  const now = new Date();
+  const endYear = now.getFullYear();
+  const endQ = Math.ceil((now.getMonth() + 1) / 3);
+  const labels = [];
+  for (let y = 2023; y <= endYear; y++) {
+    for (let q = 1; q <= 4; q++) {
+      labels.push(`Q${q} ${y}`);
+      if (y === endYear && q === endQ) return labels;
+    }
+  }
+  return labels;
+})();
 
 const LABS = {
   openai:    { name: "OpenAI",          color: "#10a37f" },
