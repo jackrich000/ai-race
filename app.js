@@ -1,3 +1,6 @@
+// ─── Constants ───────────────────────────────────────────────
+const CHART_DPR = 3;
+
 // ─── State ───────────────────────────────────────────────────
 let currentBenchmark = null; // Set to first benchmark key on init
 let currentMode = "frontier"; // "frontier" | "race" | "cost"
@@ -414,7 +417,7 @@ function renderChart() {
         },
         y: yScale,
       },
-      devicePixelRatio: 3,
+      devicePixelRatio: CHART_DPR,
     },
   });
 }
@@ -578,8 +581,8 @@ function buildExportCanvas() {
   const sourceCanvas = document.getElementById("benchmarkChart");
   const chartW = sourceCanvas.width;
   const chartH = sourceCanvas.height;
-  const pad = 24 * 3; // match DPR 3
-  const citationH = 36 * 3;
+  const pad = 24 * CHART_DPR;
+  const citationH = 36 * CHART_DPR;
   const totalW = chartW + pad * 2;
   const totalH = chartH + pad + citationH;
 
@@ -598,7 +601,7 @@ function buildExportCanvas() {
   // Citation footer
   const citationY = totalH - citationH * 0.35;
   ctx.fillStyle = "#5f6368";
-  ctx.font = `${10 * 3}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  ctx.font = `${10 * CHART_DPR}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
   ctx.textAlign = "left";
   ctx.fillText("ai-race.vercel.app", pad, citationY);
   ctx.textAlign = "right";
