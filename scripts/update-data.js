@@ -1,7 +1,7 @@
 // scripts/update-data.js
 // Multi-source data ingestion for AI Benchmark Tracker.
 // Fetches from: Artificial Analysis API, SWE-bench GitHub, ARC Prize, Epoch AI.
-// Computes cumulative-best scores per lab per quarter, upserts into Supabase.
+// Computes cumulative-best scores per lab per quarter, writes to Supabase (delete + insert).
 //
 // Usage:
 //   SUPABASE_SERVICE_KEY=xxx AA_API_KEY=xxx node scripts/update-data.js
@@ -74,19 +74,24 @@ const ORG_MAP = {
   "qwen":                "chinese",
 };
 
-// ARC Prize: derive org from modelId prefix (start-anchored to reject third-party scaffolds)
-const ARC_LAB_PATTERNS = [
-  [/^claude/i,       "anthropic"],
-  [/^gpt[-_ ]/i,    "openai"],
-  [/^o[134][-_ ]/i,  "openai"],
-  [/^gemini/i,       "google"],
-  [/^grok/i,         "xai"],
-  [/^deepseek/i,     "chinese"],
-  [/^qwen/i,         "chinese"],
-  [/^kimi/i,         "chinese"],
-  [/^minimax/i,      "chinese"],
-  [/^glm/i,          "chinese"],
+// Model name patterns: derive lab from a model identifier (used by ARC Prize + SWE-bench)
+const MODEL_LAB_PATTERNS = [
+  [/claude/i,        "anthropic"],
+  [/gpt[-_ ]/i,     "openai"],
+  [/o[134][-_ ]/i,  "openai"],
+  [/gemini/i,        "google"],
+  [/grok/i,          "xai"],
+  [/deepseek/i,      "chinese"],
+  [/qwen/i,          "chinese"],
+  [/kimi/i,          "chinese"],
+  [/minimax/i,       "chinese"],
+  [/glm/i,           "chinese"],
 ];
+
+// ARC Prize: start-anchored version to reject third-party scaffolds
+const ARC_LAB_PATTERNS = MODEL_LAB_PATTERNS.map(([re, lab]) => [
+  new RegExp("^" + re.source, re.flags), lab,
+]);
 
 // Cost of Intelligence: benchmarks with price thresholds
 const COST_BENCHMARKS = {
@@ -140,10 +145,18 @@ function extractDateFromModelId(modelId) {
   return null;
 }
 
-/** Derive lab key from an ARC Prize modelId. Returns lab key or null. */
+/** Derive lab key from an ARC Prize modelId (start-anchored). Returns lab key or null. */
 function arcModelIdToLab(modelId) {
   for (const [pattern, lab] of ARC_LAB_PATTERNS) {
     if (pattern.test(modelId)) return lab;
+  }
+  return null;
+}
+
+/** Derive lab key from any model name (substring match). Returns lab key or null. */
+function modelNameToLab(modelName) {
+  for (const [pattern, lab] of MODEL_LAB_PATTERNS) {
+    if (pattern.test(modelName)) return lab;
   }
   return null;
 }
@@ -360,12 +373,41 @@ async function fetchSWEBench() {
   const results = [];
   let skipped = 0;
 
+  let rejected = 0;
+
   for (const entry of entries) {
-    // Parse org from tags
+    // Parse org and all model tags
     const tags = entry.tags || [];
     const orgTag = tags.find(t => typeof t === "string" && t.startsWith("Org: "));
     const orgName = orgTag ? orgTag.substring(5).trim() : null;
-    const lab = normalizeOrg(orgName);
+    const modelTags = tags
+      .filter(t => typeof t === "string" && t.startsWith("Model: "))
+      .map(t => t.substring(7).trim());
+
+    // Derive lab from org tag
+    let lab = normalizeOrg(orgName);
+
+    // Derive labs from all Model tags
+    const modelLabs = [...new Set(modelTags.map(m => modelNameToLab(m)).filter(Boolean))];
+
+    // Reject multi-vendor entries (models from 2+ different labs)
+    if (modelLabs.length > 1) {
+      console.log(`   [SWE] REJECTED multi-vendor: "${entry.name}" (models span ${modelLabs.join("+")})`);
+      rejected++;
+      continue;
+    }
+
+    const modelLab = modelLabs[0] || null;
+
+    // Cross-validate: if both org and model lab are known, they must match
+    if (modelLab && lab && modelLab !== lab) {
+      console.log(`   [SWE] REJECTED cross-lab: "${entry.name}" (Org=${orgName}→${lab}, Model=${modelTags[0]}→${modelLab})`);
+      rejected++;
+      continue;
+    }
+
+    // If no org tag but model tag exists, derive lab from model
+    if (!lab && modelLab) lab = modelLab;
 
     if (!lab || !LAB_KEYS.includes(lab)) { skipped++; continue; }
 
@@ -383,6 +425,10 @@ async function fetchSWEBench() {
       date,
       source: "swebench",
     });
+  }
+
+  if (rejected > 0) {
+    console.log(`   [SWE] Rejected ${rejected} cross-lab/multi-vendor entries`);
   }
 
   console.log(`   [SWE] ${results.length} data points from ${entries.length} entries (${skipped} skipped)`);
@@ -789,24 +835,36 @@ async function main() {
     console.log(`   ${benchKey}: ${totalPoints} points, labs=[${labsWithData.join(",")}], sources=[${sources.join(",")}]`);
   }
 
-  // Upsert to Supabase
-  console.log(`\n3. Upserting ${allRows.length} rows to Supabase...`);
+  // Delete all existing rows and insert fresh data.
+  // This fixes the root cause where upsert silently ignores null overwrites.
+  console.log(`\n3. Replacing ${allRows.length} rows in Supabase (delete + insert)...`);
 
-  // Batch in chunks of 500 to stay within Supabase limits
+  const { error: delError } = await supabase
+    .from("benchmark_scores")
+    .delete()
+    .gte("quarter", "Q1 2000"); // match all rows (delete requires a filter)
+
+  if (delError) {
+    console.error("   DELETE failed:", delError.message);
+    process.exit(1);
+  }
+  console.log("   Deleted all existing benchmark_scores rows.");
+
+  // Insert in chunks of 500 to stay within Supabase limits
   const BATCH_SIZE = 500;
   for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
     const batch = allRows.slice(i, i + BATCH_SIZE);
     const { error } = await supabase
       .from("benchmark_scores")
-      .upsert(batch, { onConflict: "benchmark,lab,quarter" });
+      .insert(batch);
 
     if (error) {
-      console.error(`   Upsert FAILED (batch ${Math.floor(i / BATCH_SIZE) + 1}):`, error.message);
+      console.error(`   Insert FAILED (batch ${Math.floor(i / BATCH_SIZE) + 1}):`, error.message);
       process.exit(1);
     }
   }
 
-  console.log(`   Upserted ${allRows.length} rows successfully.`);
+  console.log(`   Inserted ${allRows.length} rows successfully.`);
 
   // ─── Cost of Intelligence processing ────────────────────────
   console.log("\n4. Processing cost data...");
@@ -853,21 +911,33 @@ async function main() {
     }
   }
 
-  // Upsert cost data
-  console.log(`\n5. Upserting ${costRows.length} cost rows to Supabase...`);
+  // Delete all existing cost rows and insert fresh data
+  console.log(`\n5. Replacing ${costRows.length} cost rows in Supabase (delete + insert)...`);
+
+  const { error: costDelError } = await supabase
+    .from("cost_intelligence")
+    .delete()
+    .gte("quarter", "Q1 2000"); // match all rows
+
+  if (costDelError) {
+    console.error("   Cost DELETE failed:", costDelError.message);
+    process.exit(1);
+  }
+  console.log("   Deleted all existing cost_intelligence rows.");
+
   for (let i = 0; i < costRows.length; i += BATCH_SIZE) {
     const batch = costRows.slice(i, i + BATCH_SIZE);
     const { error } = await supabase
       .from("cost_intelligence")
-      .upsert(batch, { onConflict: "benchmark,quarter" });
+      .insert(batch);
 
     if (error) {
-      console.error(`   Cost upsert FAILED:`, error.message);
+      console.error(`   Cost insert FAILED:`, error.message);
       process.exit(1);
     }
   }
 
-  console.log(`   Upserted ${costRows.length} cost rows successfully.`);
+  console.log(`   Inserted ${costRows.length} cost rows successfully.`);
   console.log("\nDone!");
 }
 
