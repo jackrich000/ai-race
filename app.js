@@ -706,11 +706,184 @@ document.addEventListener("DOMContentLoaded", () => {
       return lines.join("\n");
     }
 
+    // --- Pre-compute helpers for structured analysis ---
+
+    function getLatestScore(scoresArray, maxIdx) {
+      for (let i = maxIdx; i >= 0; i--) {
+        if (scoresArray[i]) return { score: scoresArray[i].score, model: scoresArray[i].model };
+      }
+      return null;
+    }
+
+    function computeRankings(startIdx, endIdx) {
+      const labKeys = Object.keys(LABS);
+      const benchKeys = Object.keys(BENCHMARKS);
+
+      function rankAtIndex(idx) {
+        const perLab = {};
+        for (const labKey of labKeys) perLab[labKey] = { ranks: [], firsts: 0, detail: {} };
+
+        for (const benchKey of benchKeys) {
+          const bench = BENCHMARKS[benchKey];
+          // Collect scores for each lab at this index
+          const entries = [];
+          for (const labKey of labKeys) {
+            const entry = getLatestScore(bench.scores[labKey], idx);
+            if (entry) entries.push({ labKey, score: entry.score, model: entry.model });
+          }
+          if (entries.length === 0) continue;
+
+          // Sort descending by score
+          entries.sort((a, b) => b.score - a.score);
+
+          // Dense ranking (1,1,2 for ties)
+          let rank = 1;
+          for (let i = 0; i < entries.length; i++) {
+            if (i > 0 && entries[i].score < entries[i - 1].score) rank++;
+            const lab = entries[i].labKey;
+            perLab[lab].ranks.push(rank);
+            perLab[lab].detail[benchKey] = { rank, score: entries[i].score, model: entries[i].model };
+            if (rank === 1) perLab[lab].firsts++;
+          }
+        }
+
+        // Compute averages
+        const result = {};
+        for (const labKey of labKeys) {
+          const d = perLab[labKey];
+          if (d.ranks.length === 0) continue;
+          result[labKey] = {
+            avgRank: Math.round((d.ranks.reduce((a, b) => a + b, 0) / d.ranks.length) * 10) / 10,
+            firsts: d.firsts,
+            benchmarksRanked: d.ranks.length,
+            detail: d.detail,
+          };
+        }
+        return result;
+      }
+
+      const startRanks = rankAtIndex(startIdx);
+      const endRanks = rankAtIndex(endIdx);
+
+      // Identify leader (lowest avg rank at end)
+      let leader = null, lowestAvg = Infinity;
+      for (const [labKey, data] of Object.entries(endRanks)) {
+        if (data.avgRank < lowestAvg) { lowestAvg = data.avgRank; leader = labKey; }
+      }
+
+      // Identify biggest loser (largest increase in avg rank)
+      let biggestLoser = null, biggestDrop = -Infinity;
+      for (const [labKey, endData] of Object.entries(endRanks)) {
+        const startData = startRanks[labKey];
+        if (!startData) continue;
+        const drop = endData.avgRank - startData.avgRank;
+        if (drop > biggestDrop) { biggestDrop = drop; biggestLoser = labKey; }
+      }
+      // If no one got worse, biggestLoser stays null
+      if (biggestDrop <= 0) biggestLoser = null;
+
+      return {
+        leader: leader ? {
+          lab: LABS[leader].name,
+          labKey: leader,
+          startAvgRank: startRanks[leader] ? startRanks[leader].avgRank : null,
+          startFirsts: startRanks[leader] ? startRanks[leader].firsts : 0,
+          endAvgRank: endRanks[leader].avgRank,
+          endFirsts: endRanks[leader].firsts,
+          detail: endRanks[leader].detail,
+        } : null,
+        biggestLoser: biggestLoser ? {
+          lab: LABS[biggestLoser].name,
+          labKey: biggestLoser,
+          startAvgRank: startRanks[biggestLoser].avgRank,
+          startFirsts: startRanks[biggestLoser].firsts,
+          endAvgRank: endRanks[biggestLoser].avgRank,
+          endFirsts: endRanks[biggestLoser].firsts,
+          detail: endRanks[biggestLoser].detail,
+        } : null,
+      };
+    }
+
+    function computeFrontierGrowth(startIdx, endIdx) {
+      const labKeys = Object.keys(LABS);
+      const results = [];
+      for (const [benchKey, bench] of Object.entries(BENCHMARKS)) {
+        let startMax = null, endMax = null;
+        for (const labKey of labKeys) {
+          const s = getLatestScore(bench.scores[labKey], startIdx);
+          const e = getLatestScore(bench.scores[labKey], endIdx);
+          if (s && (startMax === null || s.score > startMax)) startMax = s.score;
+          if (e && (endMax === null || e.score > endMax)) endMax = e.score;
+        }
+        if (startMax === null || endMax === null || startMax === 0) continue;
+        const growth = Math.round(((endMax - startMax) / startMax) * 1000) / 10;
+        results.push({
+          benchmark: bench.name,
+          description: bench.description.split(" — ")[0],
+          startScore: startMax,
+          endScore: endMax,
+          growthPct: growth,
+        });
+      }
+      results.sort((a, b) => b.growthPct - a.growthPct);
+      const avg = results.length > 0 ? Math.round((results.reduce((s, r) => s + r.growthPct, 0) / results.length) * 10) / 10 : 0;
+      return { benchmarks: results, avgGrowthPct: avg, biggestMover: results[0] || null };
+    }
+
+    function computeCostDecline(startIdx, endIdx) {
+      const results = [];
+      for (const [benchKey, meta] of Object.entries(COST_BENCHMARK_META)) {
+        const data = COST_DATA[benchKey];
+        if (!data) continue;
+
+        // Find entry at/before start and end
+        let startEntry = null, endEntry = null;
+        for (let i = startIdx; i >= 0; i--) {
+          if (data.entries[i]) { startEntry = data.entries[i]; break; }
+        }
+        for (let i = endIdx; i >= 0; i--) {
+          if (data.entries[i]) { endEntry = data.entries[i]; break; }
+        }
+
+        if (!startEntry || !endEntry || startEntry.price <= 0 || endEntry.price <= 0) {
+          results.push({ benchmark: meta.name, threshold: meta.thresholdLabel, cheaperMultiple: null, description: meta.description, context: meta.context });
+          continue;
+        }
+
+        const multiple = Math.round((startEntry.price / endEntry.price) * 10) / 10;
+        results.push({
+          benchmark: meta.name,
+          threshold: meta.thresholdLabel,
+          startPrice: startEntry.price,
+          endPrice: endEntry.price,
+          startModel: startEntry.model,
+          endModel: endEntry.model,
+          cheaperMultiple: multiple,
+          description: meta.description,
+          context: meta.context,
+        });
+      }
+      return results;
+    }
+
+    // --- End pre-compute helpers ---
+
     async function generateAnalysis() {
       const { startIdx, endIdx } = getQuarterRange();
       const startQ = TIME_LABELS[startIdx];
       const endQ = TIME_LABELS[endIdx];
       const benchmarkData = getDataForRange(startIdx, endIdx);
+
+      // Pre-compute statistics for structured analysis
+      const frontierGrowth = computeFrontierGrowth(startIdx, endIdx);
+      const rankings = computeRankings(startIdx, endIdx);
+      const stats = {
+        frontierGrowth,
+        leader: rankings.leader,
+        biggestLoser: rankings.biggestLoser,
+        activeBenchmarkCount: frontierGrowth.benchmarks.length,
+      };
+      const costData = computeCostDecline(startIdx, endIdx);
 
       generateBtn.disabled = true;
       loadingEl.hidden = false;
@@ -720,7 +893,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const resp = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ startQuarter: startQ, endQuarter: endQ, benchmarkData }),
+          body: JSON.stringify({ startQuarter: startQ, endQuarter: endQ, benchmarkData, stats, costData }),
         });
 
         if (!resp.ok) {
