@@ -390,9 +390,12 @@ const inactivityMarkerPlugin = {
       const qIdx = TIME_LABELS.indexOf(ds._activeUntil);
       if (qIdx < 0) return;
 
+      // Skip if no data at this point (null value = no marker to draw)
+      if (ds.data[qIdx] == null) return;
+
       const meta = chart.getDatasetMeta(i);
       const point = meta.data[qIdx];
-      if (!point) return;
+      if (!point || point.skip) return;
 
       const x = point.x;
       const y = point.y;
@@ -849,8 +852,14 @@ function buildExportCanvas() {
   const dotR = 4 * CHART_DPR;
   const itemGap = 16 * CHART_DPR;
 
+  const maxLegendX = totalW - pad;
   for (const ds of datasets) {
     const color = ds._isInactive ? INACTIVE_COLOR : ds.borderColor;
+    const labelWidth = ctx.measureText(ds.label).width;
+    const itemWidth = dotR * 2 + 4 * CHART_DPR + labelWidth + itemGap;
+
+    // Stop if this item would overflow the canvas
+    if (legendX + itemWidth > maxLegendX) break;
 
     // Dot
     ctx.beginPath();
@@ -863,7 +872,7 @@ function buildExportCanvas() {
     ctx.fillStyle = ds._isInactive ? "#6b7280" : "#9aa0a6";
     ctx.textAlign = "left";
     ctx.fillText(ds.label, legendX, legendY + fontSize * 0.35);
-    legendX += ctx.measureText(ds.label).width + itemGap;
+    legendX += labelWidth + itemGap;
   }
 
   // Chart image
