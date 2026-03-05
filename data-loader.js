@@ -35,37 +35,37 @@ const LABS = {
 const BENCHMARK_META = {
   "swe-bench": {
     name: "SWE-bench Verified",
-    description: "Tests ability to resolve real GitHub issues from popular open-source Python repositories. Models must understand codebases, locate bugs, and generate working patches.",
+    description: "Real GitHub issues from popular open-source Python repositories \u2014 models must generate working patches. Scores sourced from the official SWE-bench Verified leaderboard. Since every submission pairs a scaffold/agent with a model, we attribute scores to the underlying model\u2019s lab. Entries using models from multiple labs are excluded.",
     category: "Coding",
     link: "https://www.swebench.com/",
   },
   "arc-agi-1": {
     name: "ARC-AGI-1",
-    description: "Abstract and Reasoning Corpus — tests fluid intelligence through novel visual pattern recognition puzzles that require generalization from few examples.",
+    description: "Measures novel pattern recognition and abstraction \u2014 tasks that are trivial for humans but difficult for AI. Scores sourced directly from the ARC Prize official leaderboard. Only first-party model submissions are included; third-party scaffolds and wrappers are excluded.",
     category: "Reasoning",
     link: "https://arcprize.org/",
   },
   "arc-agi-2": {
     name: "ARC-AGI-2",
-    description: "Harder successor to ARC-AGI-1 with more complex abstract reasoning puzzles. Designed to remain challenging as models improve on the original.",
+    description: "The harder successor to ARC-AGI-1, released January 2025 as part of ARC Prize 2025. Same data source and filtering as ARC-AGI-1 \u2014 only first-party model submissions from the official ARC Prize leaderboard.",
     category: "Reasoning",
     link: "https://arcprize.org/",
   },
   "hle": {
     name: "Humanity's Last Exam",
-    description: "Expert-level questions spanning dozens of academic disciplines, designed to be at the frontier of human knowledge. Tests deep expertise rather than pattern matching.",
+    description: "A collaboration of 3,000+ experts across 100+ subjects, designed to be the hardest public benchmark. Released January 2025. Scores sourced from Artificial Analysis, which runs independent evaluations. May differ slightly from lab-reported model card numbers.",
     category: "Knowledge",
     link: "https://lastexam.ai/",
   },
   "gpqa": {
     name: "GPQA Diamond",
-    description: "Graduate-level science questions in physics, chemistry, and biology that are \u2018Google-proof\u2019 — experts in the field achieve ~65% while non-experts score near random chance.",
+    description: "Graduate-level science questions spanning physics, chemistry, and biology \u2014 designed so that domain experts achieve ~65% and non-experts perform at chance. Scores sourced from Artificial Analysis, which runs independent evaluations. May differ slightly from lab-reported model card numbers.",
     category: "Science",
     link: "https://arxiv.org/abs/2311.12022",
   },
   "aime": {
     name: "AIME (OTIS Mock)",
-    description: "Competition-level math problems evaluated by Epoch AI using OTIS mock AIME exams. Tests creative mathematical problem solving and reasoning under constraints.",
+    description: "Competition-level math problems modeled on the American Invitational Mathematics Examination. We use the OTIS Mock AIME 2024\u20132025 variant tracked by Epoch AI, which is harder than the standard AIME and less susceptible to data contamination.",
     category: "Math",
     link: "https://epoch.ai/data/math-benchmark-scores",
   },
