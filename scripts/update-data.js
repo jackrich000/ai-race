@@ -747,7 +747,6 @@ async function main() {
     console.error("\n   Schema migration needed! Run in the Supabase SQL editor:");
     console.error("     ALTER TABLE benchmark_scores ADD COLUMN model TEXT;");
     console.error("     ALTER TABLE benchmark_scores ADD COLUMN source TEXT;");
-    console.error("     DELETE FROM benchmark_scores WHERE benchmark = 'mmlu';");
     process.exit(1);
   }
 
@@ -821,7 +820,9 @@ async function main() {
 
   // Emit null rows for benchmarks with NO data at all (e.g., if a source was down)
   // Benchmarks already in byBenchmark are fully handled by the cumulative-best loop above
-  const allBenchmarks = ["swe-bench", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime"];
+  // Automated benchmarks (ingested from sources). Manual seeds (humaneval, swe-bench-pro) are excluded.
+  const automatedBenchmarks = ["swe-bench", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime"];
+  const allBenchmarks = automatedBenchmarks;
   for (const benchKey of allBenchmarks) {
     if (byBenchmark[benchKey]) continue; // Already processed above
     for (const lab of LAB_KEYS) {
@@ -868,19 +869,19 @@ async function main() {
     process.exit(1);
   }
 
-  // Delete all existing rows and insert fresh data.
-  console.log(`\n3. Replacing ${allRows.length} rows in Supabase (delete + insert)...`);
+  // Delete only automated benchmark rows (preserves manual seeds like humaneval, swe-bench-pro)
+  console.log(`\n3. Replacing ${allRows.length} rows in Supabase (scoped delete + insert)...`);
 
   const { error: delError } = await supabase
     .from("benchmark_scores")
     .delete()
-    .gte("quarter", "Q1 2000"); // match all rows (delete requires a filter)
+    .in("benchmark", automatedBenchmarks);
 
   if (delError) {
     console.error("   DELETE failed:", delError.message);
     process.exit(1);
   }
-  console.log("   Deleted all existing benchmark_scores rows.");
+  console.log(`   Deleted existing rows for automated benchmarks: ${automatedBenchmarks.join(", ")}`);
 
   // Insert in chunks of 500 to stay within Supabase limits
   const BATCH_SIZE = 500;

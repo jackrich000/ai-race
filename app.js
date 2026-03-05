@@ -1,5 +1,7 @@
 // ─── Constants ───────────────────────────────────────────────
 const CHART_DPR = 3;
+const INACTIVE_COLOR = "#4b5563";       // grey-600
+const INACTIVE_BORDER_WIDTH = 1.5;      // thinner than active (2.5)
 
 // ─── State ───────────────────────────────────────────────────
 let currentBenchmark = null; // Set to first benchmark key on init
@@ -9,6 +11,7 @@ let currentCostBenchmark = null; // null = all, or "gpqa" / "mmlu-pro"
 let chart = null;
 let chartMode = null; // tracks which mode the chart was built for
 let isolatedIndex = null;
+let highlightedInactiveIndex = null; // currently highlighted inactive dataset
 
 // Category colors for tab dots
 const CATEGORY_COLORS = {
@@ -22,12 +25,14 @@ const CATEGORY_COLORS = {
 
 // Distinct colors for each benchmark line in frontier mode
 const BENCHMARK_COLORS = {
-  "swe-bench":  "#10b981",
-  "arc-agi-1":  "#f59e0b",
-  "arc-agi-2":  "#f97316",
-  "hle":        "#8b5cf6",
-  "gpqa":       "#06b6d4",
-  "aime":       "#ef4444",
+  "swe-bench":     "#10b981",
+  "arc-agi-1":     "#f59e0b",
+  "arc-agi-2":     "#f97316",
+  "hle":           "#8b5cf6",
+  "gpqa":          "#06b6d4",
+  "aime":          "#ef4444",
+  "swe-bench-pro": "#34d399",
+  "humaneval":     "#6ee7b7",
 };
 
 // Colors for cost benchmarks
@@ -41,13 +46,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     showLoading(true);
     await loadData(); // from data-loader.js
-    // Default to first benchmark key
+    // Default to first active benchmark key
     if (!currentBenchmark || !BENCHMARKS[currentBenchmark]) {
-      currentBenchmark = Object.keys(BENCHMARKS)[0];
+      currentBenchmark = Object.keys(BENCHMARKS).find(k => isBenchmarkActive(k, getFilterEndDate())) || Object.keys(BENCHMARKS)[0];
     }
     renderModeToggle();
     renderFilterPills();
     renderChart();
+    renderCustomLegend();
     renderInfoArea();
     showLoading(false);
   } catch (err) {
@@ -90,8 +96,12 @@ function renderFilterPills() {
 }
 
 function renderBenchmarkPills(container) {
-  // One pill per benchmark
+  const filterEnd = getFilterEndDate();
+
+  // Only show active benchmarks in Lab Race
   for (const [key, bench] of Object.entries(BENCHMARKS)) {
+    if (!isBenchmarkActive(key, filterEnd)) continue;
+
     const btn = document.createElement("button");
     btn.className = `filter-pill${key === currentBenchmark ? " active" : ""}`;
     btn.dataset.key = key;
@@ -113,6 +123,15 @@ function renderBenchmarkPills(container) {
     });
 
     container.appendChild(btn);
+  }
+
+  // If current benchmark is inactive, switch to first active one
+  if (!isBenchmarkActive(currentBenchmark, filterEnd)) {
+    const firstActive = Object.keys(BENCHMARKS).find(k => isBenchmarkActive(k, filterEnd));
+    if (firstActive) {
+      currentBenchmark = firstActive;
+      container.querySelector(".filter-pill")?.classList.add("active");
+    }
   }
 }
 
@@ -208,10 +227,12 @@ function renderModeToggle() {
       btn.classList.add("active");
       btn.setAttribute("aria-selected", "true");
       isolatedIndex = null;
+      highlightedInactiveIndex = null;
       selectedLab = null;
       currentCostBenchmark = null;
       renderFilterPills();
       updateChart();
+      renderCustomLegend();
       renderInfoArea();
     });
   });
@@ -268,13 +289,26 @@ function buildDatasets() {
     }));
   } else {
     // Frontier: one line per benchmark
-    // If a lab is selected, use only that lab's scores; otherwise best across all
     const labKeys = selectedLab ? [selectedLab] : Object.keys(LABS);
+    const filterEnd = getFilterEndDate();
 
     return Object.entries(BENCHMARKS).map(([benchKey, benchData]) => {
+      const isInactive = !isBenchmarkActive(benchKey, filterEnd);
+      const meta = BENCHMARK_META[benchKey];
+
       const frontierData = [];
       const frontierModels = [];
       const frontierLabs = [];
+
+      // Find the activeUntil quarter index for truncation
+      let activeUntilIdx = TIME_LABELS.length - 1;
+      if (isInactive && meta.activeUntil) {
+        const idx = TIME_LABELS.indexOf(meta.activeUntil);
+        if (idx >= 0) activeUntilIdx = idx;
+      }
+
+      // Get score at the inactivity point for truncation check
+      let inactivityScore = null;
 
       for (let i = 0; i < TIME_LABELS.length; i++) {
         let bestScore = null;
@@ -290,29 +324,109 @@ function buildDatasets() {
           }
         }
 
+        // Track score at inactivity point
+        if (i === activeUntilIdx && bestScore !== null) {
+          inactivityScore = bestScore;
+        }
+
+        // Truncate inactive lines: null out points after activeUntil unless >10pp improvement
+        if (isInactive && i > activeUntilIdx) {
+          if (inactivityScore !== null && bestScore !== null && (bestScore - inactivityScore) > 10) {
+            // Significant improvement — keep the point
+          } else {
+            bestScore = null;
+            bestModel = null;
+            bestLab = null;
+          }
+        }
+
         frontierData.push(bestScore);
         frontierModels.push(bestModel);
         frontierLabs.push(bestLab);
       }
 
       const color = BENCHMARK_COLORS[benchKey];
-      return {
+      const ds = {
         label: benchData.name,
         data: frontierData,
         _models: frontierModels,
         _labs: frontierLabs,
-        borderColor: color,
-        backgroundColor: color + "33",
-        borderWidth: 2.5,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        pointBackgroundColor: color,
+        _benchKey: benchKey,
+        _isInactive: isInactive,
+        _inactiveReason: meta.inactiveReason || null,
+        _activeUntil: meta.activeUntil || null,
+        borderColor: isInactive ? INACTIVE_COLOR : color,
+        backgroundColor: (isInactive ? INACTIVE_COLOR : color) + "33",
+        borderWidth: isInactive ? INACTIVE_BORDER_WIDTH : 2.5,
+        pointRadius: isInactive ? 2 : 4,
+        pointHoverRadius: isInactive ? 4 : 6,
+        pointBackgroundColor: isInactive ? INACTIVE_COLOR : color,
+        pointHoverBackgroundColor: isInactive ? INACTIVE_COLOR : color,
         tension: 0.3,
         spanGaps: true,
+        order: isInactive ? 1 : 0, // inactive lines render behind active
       };
+
+      if (isInactive) {
+        ds.borderDash = [4, 4];
+      }
+
+      return ds;
     });
   }
 }
+
+// ─── Inactivity marker plugin ────────────────────────────────
+const inactivityMarkerPlugin = {
+  id: "inactivityMarker",
+  afterDraw(chart) {
+    if (currentMode !== "frontier") return;
+    const ctx = chart.ctx;
+
+    chart.data.datasets.forEach((ds, i) => {
+      if (!ds._isInactive || !ds._activeUntil) return;
+      if (!chart.isDatasetVisible(i)) return;
+
+      const qIdx = TIME_LABELS.indexOf(ds._activeUntil);
+      if (qIdx < 0) return;
+
+      // Skip if no data at this point (null value = no marker to draw)
+      if (ds.data[qIdx] == null) return;
+
+      const meta = chart.getDatasetMeta(i);
+      const point = meta.data[qIdx];
+      if (!point || point.skip) return;
+
+      const x = point.x;
+      const y = point.y;
+
+      // Draw a small circle with an x
+      const r = 6;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = "#1a1d27";
+      ctx.fill();
+      ctx.strokeStyle = INACTIVE_COLOR;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Draw the x
+      const xr = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(x - xr, y - xr);
+      ctx.lineTo(x + xr, y + xr);
+      ctx.moveTo(x + xr, y - xr);
+      ctx.lineTo(x - xr, y + xr);
+      ctx.strokeStyle = INACTIVE_COLOR;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.restore();
+    });
+  },
+};
+
+Chart.register(inactivityMarkerPlugin);
 
 function renderChart() {
   const ctx = document.getElementById("benchmarkChart").getContext("2d");
@@ -385,17 +499,14 @@ function renderChart() {
         mode: "index",
         intersect: false,
       },
+      hover: {
+        mode: "nearest",
+        intersect: false,
+      },
+      onHover: handleChartHover,
       plugins: {
         legend: {
-          position: "top",
-          labels: {
-            color: "#9aa0a6",
-            usePointStyle: true,
-            pointStyle: "circle",
-            padding: 16,
-            font: { size: 12 },
-          },
-          onClick: handleLegendClick,
+          display: false, // we use a custom HTML legend
         },
         tooltip: {
           backgroundColor: "#1a1d27",
@@ -405,6 +516,11 @@ function renderChart() {
           borderWidth: 1,
           padding: 12,
           cornerRadius: 8,
+          filter: (tooltipItem) => {
+            // Suppress standard tooltip entirely when hovering an inactive line
+            if (highlightedInactiveIndex !== null) return false;
+            return !tooltipItem.dataset._isInactive;
+          },
           callbacks: { label: tooltipLabel },
         },
       },
@@ -420,24 +536,295 @@ function renderChart() {
   });
 }
 
-// ─── Legend click: isolate / restore ─────────────────────────
-function handleLegendClick(_e, legendItem, legend) {
-  const ci = legend.chart;
-  const clickedIndex = legendItem.datasetIndex;
+// ─── Custom HTML Legend ──────────────────────────────────────
+function renderCustomLegend() {
+  const container = document.getElementById("chartLegend");
+  container.innerHTML = "";
 
-  if (isolatedIndex === clickedIndex) {
-    isolatedIndex = null;
-    ci.data.datasets.forEach((_, i) => ci.setDatasetVisibility(i, true));
-  } else {
-    isolatedIndex = clickedIndex;
-    ci.data.datasets.forEach((_, i) => ci.setDatasetVisibility(i, i === clickedIndex));
+  if (!chart) return;
+
+  const datasets = chart.data.datasets;
+  const activeItems = [];
+  const inactiveItems = [];
+
+  datasets.forEach((ds, i) => {
+    if (ds._isInactive) {
+      inactiveItems.push({ ds, idx: i });
+    } else {
+      activeItems.push({ ds, idx: i });
+    }
+  });
+
+  // Active items
+  activeItems.forEach(({ ds, idx }) => {
+    const btn = createLegendButton(ds, idx, false);
+    container.appendChild(btn);
+  });
+
+  // Inactive section (only in frontier mode)
+  if (inactiveItems.length > 0 && currentMode === "frontier") {
+    const divider = document.createElement("div");
+    divider.className = "legend-divider";
+    container.appendChild(divider);
+
+    const label = document.createElement("span");
+    label.className = "legend-section-label";
+    label.textContent = "Inactive";
+    container.appendChild(label);
+
+    inactiveItems.forEach(({ ds, idx }) => {
+      const btn = createLegendButton(ds, idx, true);
+      container.appendChild(btn);
+    });
+  }
+}
+
+function createLegendButton(ds, idx, isInactive) {
+  const btn = document.createElement("button");
+  btn.className = `legend-item${isInactive ? " inactive" : ""}`;
+  if (!chart.isDatasetVisible(idx)) btn.classList.add("hidden");
+
+  const dot = document.createElement("span");
+  dot.className = "legend-dot";
+  dot.style.backgroundColor = isInactive ? INACTIVE_COLOR : ds.borderColor;
+  btn.appendChild(dot);
+
+  const text = document.createTextNode(ds.label);
+  btn.appendChild(text);
+
+  // Click: isolate / restore
+  btn.addEventListener("click", () => {
+    // Clear any hover highlight before toggling
+    if (highlightedInactiveIndex !== null) {
+      unhighlightInactive(highlightedInactiveIndex);
+    }
+    handleLegendClick(idx);
+    renderCustomLegend();
+  });
+
+  // Hover: highlight inactive lines + show tooltip
+  if (isInactive) {
+    btn.addEventListener("mouseenter", (e) => {
+      highlightInactive(idx);
+      showInactiveTooltip(ds, e.clientX, e.clientY);
+    });
+    btn.addEventListener("mouseleave", () => {
+      unhighlightInactive(idx);
+      hideInactiveTooltip();
+    });
   }
 
-  ci.update();
+  return btn;
+}
+
+// ─── Legend click: isolate / restore ─────────────────────────
+function handleLegendClick(clickedIndex) {
+  if (isolatedIndex === clickedIndex) {
+    // Restore all
+    isolatedIndex = null;
+    chart.data.datasets.forEach((ds, i) => {
+      chart.setDatasetVisibility(i, true);
+      if (ds._isInactive) resetInactiveStyle(ds);
+    });
+  } else {
+    // Isolate one
+    isolatedIndex = clickedIndex;
+    const clickedDs = chart.data.datasets[clickedIndex];
+    chart.data.datasets.forEach((ds, i) => {
+      chart.setDatasetVisibility(i, i === clickedIndex);
+      // Show the isolated inactive benchmark in color
+      if (i === clickedIndex && ds._isInactive) {
+        applyActiveStyle(ds);
+      } else if (ds._isInactive) {
+        resetInactiveStyle(ds);
+      }
+    });
+  }
+
+  chart.update();
+}
+
+// ─── Inactive line styling helpers ───────────────────────────
+function applyActiveStyle(ds) {
+  const color = BENCHMARK_COLORS[ds._benchKey];
+  ds.borderColor = color;
+  ds.backgroundColor = color + "33";
+  ds.pointBackgroundColor = color;
+  ds.pointHoverBackgroundColor = color;
+  ds.pointRadius = 4;
+  ds.pointHoverRadius = 6;
+  ds.borderWidth = 2.5;
+  ds.borderDash = [];
+  ds.order = -1;
+
+  // Also update resolved element options for immediate visual effect
+  const dsIndex = chart.data.datasets.indexOf(ds);
+  if (dsIndex >= 0) {
+    const meta = chart.getDatasetMeta(dsIndex);
+    if (meta.dataset && meta.dataset.options) {
+      meta.dataset.options.borderColor = color;
+      meta.dataset.options.borderWidth = 2.5;
+      meta.dataset.options.borderDash = [];
+    }
+    meta.data.forEach(pt => {
+      if (pt && pt.options) {
+        pt.options.backgroundColor = color;
+        pt.options.hoverBackgroundColor = color;
+        pt.options.radius = 4;
+        pt.options.hoverRadius = 6;
+      }
+    });
+  }
+}
+
+function resetInactiveStyle(ds) {
+  ds.borderColor = INACTIVE_COLOR;
+  ds.backgroundColor = INACTIVE_COLOR + "33";
+  ds.pointBackgroundColor = INACTIVE_COLOR;
+  ds.pointHoverBackgroundColor = INACTIVE_COLOR;
+  ds.pointRadius = 2;
+  ds.pointHoverRadius = 4;
+  ds.borderWidth = INACTIVE_BORDER_WIDTH;
+  ds.borderDash = [4, 4];
+  ds.order = 1;
+
+  // Also update resolved element options
+  const dsIndex = chart.data.datasets.indexOf(ds);
+  if (dsIndex >= 0) {
+    const meta = chart.getDatasetMeta(dsIndex);
+    if (meta.dataset && meta.dataset.options) {
+      meta.dataset.options.borderColor = INACTIVE_COLOR;
+      meta.dataset.options.borderWidth = INACTIVE_BORDER_WIDTH;
+      meta.dataset.options.borderDash = [4, 4];
+    }
+    meta.data.forEach(pt => {
+      if (pt && pt.options) {
+        pt.options.backgroundColor = INACTIVE_COLOR;
+        pt.options.hoverBackgroundColor = INACTIVE_COLOR;
+        pt.options.radius = 2;
+        pt.options.hoverRadius = 4;
+      }
+    });
+  }
+}
+
+// ─── Hover highlight for inactive lines ─────────────────────
+function highlightInactive(datasetIndex) {
+  if (!chart) return;
+  // If switching from one inactive line to another, unhighlight the old one
+  if (highlightedInactiveIndex !== null && highlightedInactiveIndex !== datasetIndex) {
+    const oldDs = chart.data.datasets[highlightedInactiveIndex];
+    if (oldDs && oldDs._isInactive) resetInactiveStyle(oldDs);
+  }
+  if (highlightedInactiveIndex === datasetIndex) return;
+
+  const ds = chart.data.datasets[datasetIndex];
+  if (!ds || !ds._isInactive) return;
+
+  highlightedInactiveIndex = datasetIndex;
+  applyActiveStyle(ds);
+  chart.update("none");
+}
+
+function unhighlightInactive(datasetIndex) {
+  if (!chart || highlightedInactiveIndex !== datasetIndex) return;
+  const ds = chart.data.datasets[datasetIndex];
+  if (!ds || !ds._isInactive) return;
+
+  highlightedInactiveIndex = null;
+  resetInactiveStyle(ds);
+  chart.update("none");
+}
+
+function handleChartHover(event, elements) {
+  if (currentMode !== "frontier") return;
+
+  if (elements.length > 0) {
+    const dsIdx = elements[0].datasetIndex;
+    const ds = chart.data.datasets[dsIdx];
+    if (ds && ds._isInactive) {
+      highlightInactive(dsIdx);
+      const nativeEvent = event.native || event;
+      showInactiveTooltip(ds, nativeEvent.clientX, nativeEvent.clientY);
+      return;
+    }
+  }
+
+  // Unhighlight any currently highlighted inactive line
+  if (highlightedInactiveIndex !== null) {
+    unhighlightInactive(highlightedInactiveIndex);
+    hideInactiveTooltip();
+  }
+}
+
+// ─── Inactive tooltip ────────────────────────────────────────
+let inactiveTooltipEl = null;
+
+function getOrCreateInactiveTooltip() {
+  if (!inactiveTooltipEl) {
+    inactiveTooltipEl = document.createElement("div");
+    inactiveTooltipEl.className = "inactive-tooltip";
+    document.body.appendChild(inactiveTooltipEl);
+  }
+  return inactiveTooltipEl;
+}
+
+function showInactiveTooltip(ds, clientX, clientY) {
+  const tip = getOrCreateInactiveTooltip();
+  const meta = BENCHMARK_META[ds._benchKey];
+
+  const statusLabel = meta.status === "deprecated" ? "Deprecated" : "Saturated";
+  const statusClass = meta.status === "deprecated" ? "deprecated" : "saturated";
+
+  // Find the latest non-null data point
+  let latestScore = null;
+  let latestModel = null;
+  let latestQuarter = null;
+  for (let i = ds.data.length - 1; i >= 0; i--) {
+    if (ds.data[i] != null) {
+      latestScore = ds.data[i];
+      latestModel = ds._models[i];
+      latestQuarter = TIME_LABELS[i];
+      break;
+    }
+  }
+
+  let html = `<div class="inactive-tooltip-name">${ds.label} <span class="status-badge ${statusClass}">${statusLabel} ${meta.activeUntil}</span></div>`;
+  if (meta.inactiveReason) {
+    html += `<div class="inactive-tooltip-reason">${meta.inactiveReason}</div>`;
+  }
+  if (latestScore !== null) {
+    html += `<div class="inactive-tooltip-score">Peak: ${latestScore.toFixed(1)}%`;
+    if (latestModel) html += ` (${latestModel})`;
+    if (latestQuarter) html += ` \u2014 ${latestQuarter}`;
+    html += `</div>`;
+  }
+
+  tip.innerHTML = html;
+  tip.style.display = "block";
+
+  // Position above cursor so it doesn't overlap the horizontal line
+  const rect = tip.getBoundingClientRect();
+  let left = clientX - rect.width / 2;
+  let top = clientY - rect.height - 16;
+
+  // Keep within viewport
+  if (left < 8) left = 8;
+  if (left + rect.width > window.innerWidth - 8) left = window.innerWidth - rect.width - 8;
+  if (top < 8) top = clientY + 20; // flip below if no room above
+
+  tip.style.left = left + "px";
+  tip.style.top = top + "px";
+}
+
+function hideInactiveTooltip() {
+  if (inactiveTooltipEl) inactiveTooltipEl.style.display = "none";
 }
 
 function updateChart() {
   isolatedIndex = null;
+  highlightedInactiveIndex = null;
+  hideInactiveTooltip();
 
   // If switching between cost and non-cost, destroy and recreate (scale type changes)
   const needsCost = currentMode === "cost";
@@ -445,17 +832,17 @@ function updateChart() {
   if (needsCost !== hadCost) {
     chart.destroy();
     renderChart();
+    renderCustomLegend();
     return;
   }
 
   chart.data.datasets = buildDatasets();
   chart.data.datasets.forEach((_, i) => chart.setDatasetVisibility(i, true));
   chart.update();
+  renderCustomLegend();
 }
 
 // ─── Info area ───────────────────────────────────────────────
-// Always renders the same expandable benchmark list in both modes.
-// In Lab Race, the currently selected benchmark is auto-expanded.
 function renderCostInfoArea(card) {
   let html = '<div class="cost-headlines">';
 
@@ -463,7 +850,6 @@ function renderCostInfoArea(card) {
     const data = COST_DATA[key];
     if (!data) continue;
 
-    // Find first and last non-null entries
     const startIdx = TIME_LABELS.indexOf(meta.startQuarter);
     let firstEntry = null, lastEntry = null;
     let firstQ = null, lastQ = null;
@@ -508,22 +894,41 @@ function renderInfoArea() {
   }
 
   const autoExpand = (currentMode === "race") ? currentBenchmark : null;
+  const filterEnd = getFilterEndDate();
 
   let html = '<div class="benchmark-list">';
 
   for (const [key, bench] of Object.entries(BENCHMARKS)) {
-    const color = BENCHMARK_COLORS[key];
+    const color = BENCHMARK_COLORS[key] || INACTIVE_COLOR;
     const isOpen = key === autoExpand;
+    const isInactive = !isBenchmarkActive(key, filterEnd);
+    const meta = BENCHMARK_META[key];
+
+    // Status badge
+    let statusBadge = "";
+    if (isInactive && meta.status === "deprecated") {
+      statusBadge = `<span class="status-badge deprecated">Deprecated ${meta.activeUntil}</span>`;
+    } else if (isInactive && meta.status === "saturated") {
+      statusBadge = `<span class="status-badge saturated">Saturated ${meta.activeUntil}</span>`;
+    }
+
+    // Description with inactive reason
+    let description = bench.description;
+    if (isInactive && meta.inactiveReason) {
+      description += ` <em style="color:var(--text-muted);">${meta.inactiveReason}.</em>`;
+    }
+
     html += `
       <div class="benchmark-item" data-bench="${key}">
         <button class="benchmark-item-header" aria-expanded="${isOpen}">
-          <span class="pill-dot" style="background-color: ${color}"></span>
+          <span class="pill-dot" style="background-color: ${isInactive ? INACTIVE_COLOR : color}"></span>
           <span class="benchmark-item-name">${bench.name}</span>
           <span class="category-badge">${bench.category}</span>
+          ${statusBadge}
           <span class="expand-icon">${isOpen ? "\u2212" : "+"}</span>
         </button>
         <div class="benchmark-item-detail"${isOpen ? "" : " hidden"}>
-          <p>${bench.description}</p>
+          <p>${description}</p>
           <a href="${bench.link}" target="_blank" rel="noopener">Learn more &rarr;</a>
         </div>
       </div>
@@ -541,7 +946,6 @@ function renderInfoArea() {
       const icon = header.querySelector(".expand-icon");
       const isOpen = !detail.hidden;
 
-      // Close all others
       card.querySelectorAll(".benchmark-item-detail").forEach(d => d.hidden = true);
       card.querySelectorAll(".expand-icon").forEach(ic => ic.textContent = "+");
       card.querySelectorAll(".benchmark-item-header").forEach(h => h.setAttribute("aria-expanded", "false"));
@@ -580,9 +984,10 @@ function buildExportCanvas() {
   const chartW = sourceCanvas.width;
   const chartH = sourceCanvas.height;
   const pad = 24 * CHART_DPR;
+  const legendH = 32 * CHART_DPR;
   const citationH = 36 * CHART_DPR;
   const totalW = chartW + pad * 2;
-  const totalH = chartH + pad + citationH;
+  const totalH = chartH + pad + legendH + citationH;
 
   const canvas = document.createElement("canvas");
   canvas.width = totalW;
@@ -593,8 +998,41 @@ function buildExportCanvas() {
   ctx.fillStyle = "#0f1117";
   ctx.fillRect(0, 0, totalW, totalH);
 
+  // Draw legend row at top
+  const datasets = chart.data.datasets.filter((_, i) => chart.isDatasetVisible(i));
+  const fontSize = 10 * CHART_DPR;
+  ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+
+  let legendX = pad;
+  const legendY = pad + legendH * 0.6;
+  const dotR = 4 * CHART_DPR;
+  const itemGap = 16 * CHART_DPR;
+
+  const maxLegendX = totalW - pad;
+  for (const ds of datasets) {
+    const color = ds._isInactive ? INACTIVE_COLOR : ds.borderColor;
+    const labelWidth = ctx.measureText(ds.label).width;
+    const itemWidth = dotR * 2 + 4 * CHART_DPR + labelWidth + itemGap;
+
+    // Stop if this item would overflow the canvas
+    if (legendX + itemWidth > maxLegendX) break;
+
+    // Dot
+    ctx.beginPath();
+    ctx.arc(legendX + dotR, legendY, dotR, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    legendX += dotR * 2 + 4 * CHART_DPR;
+
+    // Label
+    ctx.fillStyle = ds._isInactive ? "#6b7280" : "#9aa0a6";
+    ctx.textAlign = "left";
+    ctx.fillText(ds.label, legendX, legendY + fontSize * 0.35);
+    legendX += labelWidth + itemGap;
+  }
+
   // Chart image
-  ctx.drawImage(sourceCanvas, pad, pad, chartW, chartH);
+  ctx.drawImage(sourceCanvas, pad, pad + legendH, chartW, chartH);
 
   // Citation footer
   const citationY = totalH - citationH * 0.35;
@@ -683,7 +1121,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const toIdx = TIME_LABELS.indexOf(rangeTo.value);
         return { startIdx: Math.min(fromIdx, toIdx), endIdx: Math.max(fromIdx, toIdx) };
       }
-      // Map months to quarters: 3mo = 1Q, 6mo = 2Q, 12mo = 4Q
       const quartersBack = Math.ceil(selectedRange / 3);
       const endIdx = TIME_LABELS.length - 1;
       const startIdx = Math.max(0, endIdx - quartersBack);
@@ -691,9 +1128,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function getDataForRange(startIdx, endIdx) {
+      const filterEnd = getFilterEndDate();
       let lines = [];
       for (const [benchKey, bench] of Object.entries(BENCHMARKS)) {
-        lines.push(`\n## ${bench.name} (${bench.category})`);
+        const meta = BENCHMARK_META[benchKey];
+        const isInactive = !isBenchmarkActive(benchKey, filterEnd);
+        let header = `\n## ${bench.name} (${bench.category})`;
+        if (isInactive && meta.status === "saturated") {
+          header += ` [SATURATED - ${meta.activeUntil}]`;
+        } else if (isInactive && meta.status === "deprecated") {
+          header += ` [DEPRECATED - ${meta.activeUntil}]`;
+        }
+        lines.push(header);
         for (const [labKey, lab] of Object.entries(LABS)) {
           const scores = bench.scores[labKey].slice(startIdx, endIdx + 1);
           const labels = TIME_LABELS.slice(startIdx, endIdx + 1);
