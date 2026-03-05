@@ -107,7 +107,7 @@ export default function handler() {
                       maxWidth: "800px",
                       lineHeight: "1.4",
                     },
-                    children: "Benchmark scores & API costs across frontier AI labs, updated quarterly.",
+                    children: "Up-to-date charts & AI commentary, to feed your latest FOMO pitch",
                   },
                 },
               ],
