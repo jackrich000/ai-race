@@ -11,7 +11,7 @@ Minimum viable launch. Organized into waves for parallel execution.
 
 ### Wave 1 — Start first, all independent
 
-- [ ] **Data accuracy deep dive** — Check all data points against official external sources. Think through where users might challenge the numbers.
+- [x] **Data accuracy deep dive** — Check all data points against official external sources. Think through where users might challenge the numbers.
 - [ ] **OG meta tags + site copy review** *(single worktree)* — Add og:title, og:description, og:image for good LinkedIn/X previews. Review and refine all site copy to align around purpose: easy, reliable, up-to-date view of AI model progress for consultants/employees building slides. Do copy first since OG description should match.
 - [x] **Chart image export / copy button** — High quality image export so users can paste charts directly into slides.
 - [x] **Simple analytics** — Vercel Web Analytics (cookieless, GDPR compliant, no consent banner needed). Enabled in dashboard + script tag in index.html.
