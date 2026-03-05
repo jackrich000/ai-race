@@ -12,9 +12,15 @@ Minimum viable launch. Organized into waves for parallel execution.
 ### Wave 1 — Start first, all independent
 
 - [x] **Data accuracy deep dive** — Check all data points against official external sources. Think through where users might challenge the numbers.
-- [ ] **OG meta tags + site copy review** *(single worktree)* — Add og:title, og:description, og:image for good LinkedIn/X previews. Review and refine all site copy to align around purpose: easy, reliable, up-to-date view of AI model progress for consultants/employees building slides. Do copy first since OG description should match.
+- [-] **OG meta tags + site copy review** *(single worktree)* — Add og:title, og:description, og:image for good LinkedIn/X previews. Review and refine all site copy to align around purpose: easy, reliable, up-to-date view of AI model progress for consultants/employees building slides. Do copy first since OG description should match.
 - [x] **Chart image export / copy button** — High quality image export so users can paste charts directly into slides.
 - [x] **Simple analytics** — Vercel Web Analytics (cookieless, GDPR compliant, no consent banner needed). Enabled in dashboard + script tag in index.html.
+
+### Wave 1.5 — After OG meta merges
+
+- [ ] **In-chart citation & source attribution** — Add a citation line inside the chart area (left: `ai-race.vercel.app`, right: source names for current view). Add an info icon with tooltip explaining data sources and methodology. Must also update `buildExportCanvas()` to read from the same source of truth.
+  - **Short citation line** (visible in chart area): Left: `ai-race.vercel.app` | Right: dynamic source names per view (e.g. "Source: ARC Prize" or "Source: Artificial Analysis")
+  - **Info tooltip** (on hover/click of an info icon): "Scores are sourced from official benchmark leaderboards (ARC Prize, SWE-bench Verified) and independent evaluation platforms (Artificial Analysis, Epoch AI). Scores may differ slightly from lab-reported model card numbers due to differences in evaluation methodology. Price data is from Artificial Analysis (blended 3:1 input:output per million tokens)."
 
 ### Wave 2 — After Wave 1 merges
 

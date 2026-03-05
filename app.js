@@ -50,8 +50,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderChart();
     renderInfoArea();
     showLoading(false);
-    document.querySelector("footer p").innerHTML =
-      'Data sourced from <a href="https://epoch.ai/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">Epoch AI</a>, <a href="https://www.swebench.com/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">SWE-bench</a>, <a href="https://arcprize.org/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">ARC Prize</a> &amp; <a href="https://artificialanalysis.ai/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">Artificial Analysis</a>. Scores represent cumulative best per lab per quarter.';
   } catch (err) {
     console.error("Failed to load data:", err);
     showError("Failed to load benchmark data. Please try refreshing the page.");
@@ -572,9 +570,9 @@ function getExportFilename() {
   }
   if (selectedLab) {
     const lab = LABS[selectedLab];
-    return lab ? `Frontier Progress — ${lab.name}` : "Frontier Progress";
+    return lab ? `AI Frontier — ${lab.name}` : "AI Frontier";
   }
-  return "Frontier Progress — All Labs";
+  return "AI Frontier — All Labs";
 }
 
 function buildExportCanvas() {

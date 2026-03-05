@@ -3,21 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Benchmark Tracker</title>
+  <title>The AI Race — Frontier AI benchmarks & costs over time</title>
+  <meta name="description" content="Benchmark scores & API costs across frontier AI labs, updated quarterly. The AI Race tracks OpenAI, Anthropic, Google, xAI, and Chinese labs.">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://ai-race.vercel.app/">
+  <meta property="og:title" content="The AI Race">
+  <meta property="og:description" content="Benchmark scores & API costs across frontier AI labs, updated quarterly.">
+  <meta property="og:image" content="https://ai-race.vercel.app/api/og">
+
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="The AI Race">
+  <meta name="twitter:description" content="Benchmark scores & API costs across frontier AI labs, updated quarterly.">
+  <meta name="twitter:image" content="https://ai-race.vercel.app/api/og">
+
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <header>
-    <h1>AI Benchmark Tracker</h1>
-    <p class="subtitle">Tracking frontier AI model performance across leading benchmarks over time</p>
+    <h1>The AI Race</h1>
+    <p class="subtitle">Up-to-date charts & AI commentary, to feed your latest FOMO pitch</p>
   </header>
 
   <main>
     <div class="controls">
       <div class="mode-toggle" role="tablist">
-        <button class="mode-btn active" data-mode="frontier" role="tab" aria-selected="true">Frontier Progress</button>
+        <button class="mode-btn active" data-mode="frontier" role="tab" aria-selected="true">AI Frontier</button>
         <button class="mode-btn" data-mode="race" role="tab" aria-selected="false">Lab Race</button>
         <button class="mode-btn" data-mode="cost" role="tab" aria-selected="false">Cost of Intelligence</button>
       </div>
@@ -74,10 +89,6 @@
       <!-- Populated by app.js -->
     </div>
   </main>
-
-  <footer>
-    <p>Data is illustrative (dummy). Built to explore visualization design.</p>
-  </footer>
 
   <script src="data-loader.js"></script>
   <script src="app.js"></script>
