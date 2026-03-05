@@ -61,7 +61,6 @@ const BENCHMARK_START_QUARTER = {
   "hle":       "Q1 2025",  // Released January 2025
   "gpqa":      "Q4 2023",  // Published November 2023
   "arc-agi-2": "Q1 2025",  // Released as part of ARC Prize 2025
-  "mmlu":      "Q1 2023",  // Published September 2020, but we track from Q1 2023
 };
 
 // Org name normalization (covers all sources)
@@ -114,13 +113,12 @@ const COST_BENCHMARKS = {
   "mmlu-pro": { evalField: "mmlu_pro", threshold: 73, startQuarter: "Q2 2024" },
 };
 
-// Epoch: CSV files to process (AIME + ARC-AGI + SWE-bench + MMLU for historical data)
+// Epoch: CSV files to process (AIME + ARC-AGI + SWE-bench for historical data)
 const EPOCH_BENCHMARK_FILES = {
   "otis_mock_aime_2024_2025.csv": { key: "aime",      scoreCol: "mean_score" },
   "arc_agi_external.csv":         { key: "arc-agi-1",  scoreCol: "Score" },
   "arc_agi_2_external.csv":       { key: "arc-agi-2",  scoreCol: "Score" },
   "swe_bench_verified.csv":       { key: "swe-bench",  scoreCol: "mean_score" },
-  "mmlu_external.csv":            { key: "mmlu",       scoreCol: "EM" },
 };
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -749,7 +747,6 @@ async function main() {
     console.error("\n   Schema migration needed! Run in the Supabase SQL editor:");
     console.error("     ALTER TABLE benchmark_scores ADD COLUMN model TEXT;");
     console.error("     ALTER TABLE benchmark_scores ADD COLUMN source TEXT;");
-    console.error("     DELETE FROM benchmark_scores WHERE benchmark = 'mmlu';");
     process.exit(1);
   }
 
@@ -824,7 +821,7 @@ async function main() {
   // Emit null rows for benchmarks with NO data at all (e.g., if a source was down)
   // Benchmarks already in byBenchmark are fully handled by the cumulative-best loop above
   // Automated benchmarks (ingested from sources). Manual seeds (humaneval, swe-bench-pro) are excluded.
-  const automatedBenchmarks = ["swe-bench", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime", "mmlu"];
+  const automatedBenchmarks = ["swe-bench", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime"];
   const allBenchmarks = automatedBenchmarks;
   for (const benchKey of allBenchmarks) {
     if (byBenchmark[benchKey]) continue; // Already processed above

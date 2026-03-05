@@ -57,12 +57,13 @@ const HUMANEVAL_RAW = [
   { lab: "xai", quarter: "Q4 2024", score: 74.1, model: "Grok-2" },
 ];
 
-// ─── SWE-bench Pro data (Feb 2026 leaderboard) ──
+// ─── SWE-bench Pro data (Scale AI SEAL leaderboard, Jan 2026) ──
+// Source: https://scale.com/leaderboard — SWE-Bench Pro (Public Dataset)
 const SWEBENCH_PRO_RAW = [
-  { lab: "openai", quarter: "Q1 2026", score: 42.7, model: "o3" },
-  { lab: "anthropic", quarter: "Q1 2026", score: 40.2, model: "Claude Opus 4" },
-  { lab: "google", quarter: "Q1 2026", score: 35.8, model: "Gemini 2.5 Pro" },
-  { lab: "chinese", quarter: "Q1 2026", score: 33.1, model: "DeepSeek-R2" },
+  { lab: "anthropic", quarter: "Q3 2025", score: 43.6, model: "Claude 4.5 Sonnet" },
+  { lab: "anthropic", quarter: "Q4 2025", score: 45.9, model: "Claude Opus 4.5" },
+  { lab: "google", quarter: "Q4 2025", score: 43.3, model: "Gemini 3 Pro" },
+  { lab: "openai", quarter: "Q4 2025", score: 41.8, model: "GPT-5" },
 ];
 
 /**
@@ -147,7 +148,7 @@ async function main() {
   await supabaseRequest("DELETE", "/rest/v1/benchmark_scores?benchmark=in.(humaneval,swe-bench-pro)");
 
   const humanEvalRows = computeCumulativeBestRows(HUMANEVAL_RAW, "humaneval", "Q1 2023");
-  const sweProRows = computeCumulativeBestRows(SWEBENCH_PRO_RAW, "swe-bench-pro", "Q1 2026");
+  const sweProRows = computeCumulativeBestRows(SWEBENCH_PRO_RAW, "swe-bench-pro", "Q3 2025");
   const allRows = [...humanEvalRows, ...sweProRows];
 
   // Summary

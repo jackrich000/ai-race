@@ -32,7 +32,6 @@ const BENCHMARK_COLORS = {
   "gpqa":          "#06b6d4",
   "aime":          "#ef4444",
   "swe-bench-pro": "#34d399",
-  "mmlu":          "#a78bfa",
   "humaneval":     "#6ee7b7",
 };
 
@@ -362,6 +361,7 @@ function buildDatasets() {
         pointRadius: isInactive ? 2 : 4,
         pointHoverRadius: isInactive ? 4 : 6,
         pointBackgroundColor: isInactive ? INACTIVE_COLOR : color,
+        pointHoverBackgroundColor: isInactive ? INACTIVE_COLOR : color,
         tension: 0.3,
         spanGaps: true,
         order: isInactive ? 1 : 0, // inactive lines render behind active
@@ -501,7 +501,7 @@ function renderChart() {
       },
       hover: {
         mode: "nearest",
-        intersect: true,
+        intersect: false,
       },
       onHover: handleChartHover,
       plugins: {
@@ -516,7 +516,11 @@ function renderChart() {
           borderWidth: 1,
           padding: 12,
           cornerRadius: 8,
-          filter: (tooltipItem) => !tooltipItem.dataset._isInactive,
+          filter: (tooltipItem) => {
+            // Suppress standard tooltip entirely when hovering an inactive line
+            if (highlightedInactiveIndex !== null) return false;
+            return !tooltipItem.dataset._isInactive;
+          },
           callbacks: { label: tooltipLabel },
         },
       },
@@ -590,48 +594,135 @@ function createLegendButton(ds, idx, isInactive) {
 
   // Click: isolate / restore
   btn.addEventListener("click", () => {
-    handleLegendClick(null, { datasetIndex: idx }, { chart });
+    // Clear any hover highlight before toggling
+    if (highlightedInactiveIndex !== null) {
+      unhighlightInactive(highlightedInactiveIndex);
+    }
+    handleLegendClick(idx);
     renderCustomLegend();
   });
 
-  // Hover: highlight inactive lines
+  // Hover: highlight inactive lines + show tooltip
   if (isInactive) {
-    btn.addEventListener("mouseenter", () => highlightInactive(idx));
-    btn.addEventListener("mouseleave", () => unhighlightInactive(idx));
+    btn.addEventListener("mouseenter", (e) => {
+      highlightInactive(idx);
+      showInactiveTooltip(ds, e.clientX, e.clientY);
+    });
+    btn.addEventListener("mouseleave", () => {
+      unhighlightInactive(idx);
+      hideInactiveTooltip();
+    });
   }
 
   return btn;
 }
 
 // ─── Legend click: isolate / restore ─────────────────────────
-function handleLegendClick(_e, legendItem, legend) {
-  const ci = legend.chart;
-  const clickedIndex = legendItem.datasetIndex;
-
+function handleLegendClick(clickedIndex) {
   if (isolatedIndex === clickedIndex) {
+    // Restore all
     isolatedIndex = null;
-    ci.data.datasets.forEach((_, i) => ci.setDatasetVisibility(i, true));
+    chart.data.datasets.forEach((ds, i) => {
+      chart.setDatasetVisibility(i, true);
+      if (ds._isInactive) resetInactiveStyle(ds);
+    });
   } else {
+    // Isolate one
     isolatedIndex = clickedIndex;
-    ci.data.datasets.forEach((_, i) => ci.setDatasetVisibility(i, i === clickedIndex));
+    const clickedDs = chart.data.datasets[clickedIndex];
+    chart.data.datasets.forEach((ds, i) => {
+      chart.setDatasetVisibility(i, i === clickedIndex);
+      // Show the isolated inactive benchmark in color
+      if (i === clickedIndex && ds._isInactive) {
+        applyActiveStyle(ds);
+      } else if (ds._isInactive) {
+        resetInactiveStyle(ds);
+      }
+    });
   }
 
-  ci.update();
+  chart.update();
+}
+
+// ─── Inactive line styling helpers ───────────────────────────
+function applyActiveStyle(ds) {
+  const color = BENCHMARK_COLORS[ds._benchKey];
+  ds.borderColor = color;
+  ds.backgroundColor = color + "33";
+  ds.pointBackgroundColor = color;
+  ds.pointHoverBackgroundColor = color;
+  ds.pointRadius = 4;
+  ds.pointHoverRadius = 6;
+  ds.borderWidth = 2.5;
+  ds.borderDash = [];
+  ds.order = -1;
+
+  // Also update resolved element options for immediate visual effect
+  const dsIndex = chart.data.datasets.indexOf(ds);
+  if (dsIndex >= 0) {
+    const meta = chart.getDatasetMeta(dsIndex);
+    if (meta.dataset && meta.dataset.options) {
+      meta.dataset.options.borderColor = color;
+      meta.dataset.options.borderWidth = 2.5;
+      meta.dataset.options.borderDash = [];
+    }
+    meta.data.forEach(pt => {
+      if (pt && pt.options) {
+        pt.options.backgroundColor = color;
+        pt.options.hoverBackgroundColor = color;
+        pt.options.radius = 4;
+        pt.options.hoverRadius = 6;
+      }
+    });
+  }
+}
+
+function resetInactiveStyle(ds) {
+  ds.borderColor = INACTIVE_COLOR;
+  ds.backgroundColor = INACTIVE_COLOR + "33";
+  ds.pointBackgroundColor = INACTIVE_COLOR;
+  ds.pointHoverBackgroundColor = INACTIVE_COLOR;
+  ds.pointRadius = 2;
+  ds.pointHoverRadius = 4;
+  ds.borderWidth = INACTIVE_BORDER_WIDTH;
+  ds.borderDash = [4, 4];
+  ds.order = 1;
+
+  // Also update resolved element options
+  const dsIndex = chart.data.datasets.indexOf(ds);
+  if (dsIndex >= 0) {
+    const meta = chart.getDatasetMeta(dsIndex);
+    if (meta.dataset && meta.dataset.options) {
+      meta.dataset.options.borderColor = INACTIVE_COLOR;
+      meta.dataset.options.borderWidth = INACTIVE_BORDER_WIDTH;
+      meta.dataset.options.borderDash = [4, 4];
+    }
+    meta.data.forEach(pt => {
+      if (pt && pt.options) {
+        pt.options.backgroundColor = INACTIVE_COLOR;
+        pt.options.hoverBackgroundColor = INACTIVE_COLOR;
+        pt.options.radius = 2;
+        pt.options.hoverRadius = 4;
+      }
+    });
+  }
 }
 
 // ─── Hover highlight for inactive lines ─────────────────────
 function highlightInactive(datasetIndex) {
-  if (!chart || highlightedInactiveIndex === datasetIndex) return;
+  if (!chart) return;
+  // If switching from one inactive line to another, unhighlight the old one
+  if (highlightedInactiveIndex !== null && highlightedInactiveIndex !== datasetIndex) {
+    const oldDs = chart.data.datasets[highlightedInactiveIndex];
+    if (oldDs && oldDs._isInactive) resetInactiveStyle(oldDs);
+  }
+  if (highlightedInactiveIndex === datasetIndex) return;
+
   const ds = chart.data.datasets[datasetIndex];
   if (!ds || !ds._isInactive) return;
 
   highlightedInactiveIndex = datasetIndex;
-  const originalColor = BENCHMARK_COLORS[ds._benchKey];
-  ds.borderColor = originalColor;
-  ds.pointBackgroundColor = originalColor;
-  ds.borderWidth = 2.5;
-  ds.borderDash = [];
-  ds.order = -1;
+  applyActiveStyle(ds);
   chart.update("none");
 }
 
@@ -641,11 +732,7 @@ function unhighlightInactive(datasetIndex) {
   if (!ds || !ds._isInactive) return;
 
   highlightedInactiveIndex = null;
-  ds.borderColor = INACTIVE_COLOR;
-  ds.pointBackgroundColor = INACTIVE_COLOR;
-  ds.borderWidth = INACTIVE_BORDER_WIDTH;
-  ds.borderDash = [4, 4];
-  ds.order = 1;
+  resetInactiveStyle(ds);
   chart.update("none");
 }
 
@@ -653,9 +740,12 @@ function handleChartHover(event, elements) {
   if (currentMode !== "frontier") return;
 
   if (elements.length > 0) {
-    const ds = chart.data.datasets[elements[0].datasetIndex];
+    const dsIdx = elements[0].datasetIndex;
+    const ds = chart.data.datasets[dsIdx];
     if (ds && ds._isInactive) {
-      highlightInactive(elements[0].datasetIndex);
+      highlightInactive(dsIdx);
+      const nativeEvent = event.native || event;
+      showInactiveTooltip(ds, nativeEvent.clientX, nativeEvent.clientY);
       return;
     }
   }
@@ -663,12 +753,78 @@ function handleChartHover(event, elements) {
   // Unhighlight any currently highlighted inactive line
   if (highlightedInactiveIndex !== null) {
     unhighlightInactive(highlightedInactiveIndex);
+    hideInactiveTooltip();
   }
+}
+
+// ─── Inactive tooltip ────────────────────────────────────────
+let inactiveTooltipEl = null;
+
+function getOrCreateInactiveTooltip() {
+  if (!inactiveTooltipEl) {
+    inactiveTooltipEl = document.createElement("div");
+    inactiveTooltipEl.className = "inactive-tooltip";
+    document.body.appendChild(inactiveTooltipEl);
+  }
+  return inactiveTooltipEl;
+}
+
+function showInactiveTooltip(ds, clientX, clientY) {
+  const tip = getOrCreateInactiveTooltip();
+  const meta = BENCHMARK_META[ds._benchKey];
+
+  const statusLabel = meta.status === "deprecated" ? "Deprecated" : "Saturated";
+  const statusClass = meta.status === "deprecated" ? "deprecated" : "saturated";
+
+  // Find the latest non-null data point
+  let latestScore = null;
+  let latestModel = null;
+  let latestQuarter = null;
+  for (let i = ds.data.length - 1; i >= 0; i--) {
+    if (ds.data[i] != null) {
+      latestScore = ds.data[i];
+      latestModel = ds._models[i];
+      latestQuarter = TIME_LABELS[i];
+      break;
+    }
+  }
+
+  let html = `<div class="inactive-tooltip-name">${ds.label} <span class="status-badge ${statusClass}">${statusLabel} ${meta.activeUntil}</span></div>`;
+  if (meta.inactiveReason) {
+    html += `<div class="inactive-tooltip-reason">${meta.inactiveReason}</div>`;
+  }
+  if (latestScore !== null) {
+    html += `<div class="inactive-tooltip-score">Peak: ${latestScore.toFixed(1)}%`;
+    if (latestModel) html += ` (${latestModel})`;
+    if (latestQuarter) html += ` \u2014 ${latestQuarter}`;
+    html += `</div>`;
+  }
+
+  tip.innerHTML = html;
+  tip.style.display = "block";
+
+  // Position above cursor so it doesn't overlap the horizontal line
+  const rect = tip.getBoundingClientRect();
+  let left = clientX - rect.width / 2;
+  let top = clientY - rect.height - 16;
+
+  // Keep within viewport
+  if (left < 8) left = 8;
+  if (left + rect.width > window.innerWidth - 8) left = window.innerWidth - rect.width - 8;
+  if (top < 8) top = clientY + 20; // flip below if no room above
+
+  tip.style.left = left + "px";
+  tip.style.top = top + "px";
+}
+
+function hideInactiveTooltip() {
+  if (inactiveTooltipEl) inactiveTooltipEl.style.display = "none";
 }
 
 function updateChart() {
   isolatedIndex = null;
   highlightedInactiveIndex = null;
+  hideInactiveTooltip();
 
   // If switching between cost and non-cost, destroy and recreate (scale type changes)
   const needsCost = currentMode === "cost";

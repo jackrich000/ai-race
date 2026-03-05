@@ -65,21 +65,12 @@ const BENCHMARK_META = {
   },
   "swe-bench-pro": {
     name: "SWE-bench Pro",
-    description: "The successor to SWE-bench Verified, launched by Scale AI in February 2026. Features harder, more realistic software engineering tasks with multi-file changes and longer reasoning chains. Scores sourced from the official SWE-bench Pro leaderboard.",
+    description: "Long-horizon software engineering tasks in real open-source repositories, hosted on Scale AI\u2019s SEAL platform. The successor to SWE-bench Verified, featuring harder multi-file changes and longer reasoning chains. Scores sourced from the official SEAL leaderboard.",
     category: "Coding",
-    link: "https://www.swebench.com/",
+    link: "https://scale.com/leaderboard",
     status: "active",
   },
   // ─── Inactive benchmarks ───
-  "mmlu": {
-    name: "MMLU",
-    description: "Massive Multitask Language Understanding \u2014 57 academic subjects from STEM to humanities. Once the gold standard for measuring broad knowledge. Top models converged at 88\u201390%, making it unable to differentiate frontier performance.",
-    category: "Knowledge",
-    link: "https://arxiv.org/abs/2009.03300",
-    status: "saturated",
-    activeUntil: "Q4 2024",
-    inactiveReason: "Top models converged at 88\u201390%, no longer differentiates frontier performance",
-  },
   "humaneval": {
     name: "HumanEval",
     description: "164 hand-written Python programming problems testing code generation from docstrings. Created by OpenAI in 2021, it became the standard coding benchmark. Top models now score 97%+, making it effectively solved.",

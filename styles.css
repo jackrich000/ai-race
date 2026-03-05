@@ -140,6 +140,14 @@ main {
   margin-bottom: 1.25rem;
   position: relative;
   height: 470px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-canvas-wrapper {
+  flex: 1;
+  min-height: 0;
+  position: relative;
 }
 
 /* Custom chart legend */
@@ -578,6 +586,40 @@ main {
   line-height: 1.55;
 }
 
+/* Inactive benchmark tooltip */
+.inactive-tooltip {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  background: #1a1d27;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.65rem 0.85rem;
+  max-width: 300px;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.inactive-tooltip-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  margin-bottom: 0.3rem;
+}
+
+.inactive-tooltip-reason {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.3rem;
+  line-height: 1.4;
+}
+
+.inactive-tooltip-score {
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
 /* Footer */
 footer {
   text-align: center;
@@ -591,7 +633,7 @@ footer {
   header { padding: 1.5rem 1rem 1rem; }
   header h1 { font-size: 1.35rem; }
   main { padding: 0 1rem 1.5rem; }
-  .chart-container { height: 350px; padding: 1rem; }
+  .chart-container { height: 380px; padding: 1rem; }
   .filter-pill { font-size: 0.75rem; padding: 0.35rem 0.75rem; }
   .filter-pills { gap: 0.35rem; }
 }
