@@ -61,6 +61,7 @@ const BENCHMARK_START_QUARTER = {
   "hle":       "Q1 2025",  // Released January 2025
   "gpqa":      "Q4 2023",  // Published November 2023
   "arc-agi-2": "Q1 2025",  // Released as part of ARC Prize 2025
+  "mmlu":      "Q1 2023",  // Published September 2020, but we track from Q1 2023
 };
 
 // Org name normalization (covers all sources)
@@ -113,12 +114,13 @@ const COST_BENCHMARKS = {
   "mmlu-pro": { evalField: "mmlu_pro", threshold: 73, startQuarter: "Q2 2024" },
 };
 
-// Epoch: CSV files to process (AIME + ARC-AGI + SWE-bench for historical data)
+// Epoch: CSV files to process (AIME + ARC-AGI + SWE-bench + MMLU for historical data)
 const EPOCH_BENCHMARK_FILES = {
   "otis_mock_aime_2024_2025.csv": { key: "aime",      scoreCol: "mean_score" },
   "arc_agi_external.csv":         { key: "arc-agi-1",  scoreCol: "Score" },
   "arc_agi_2_external.csv":       { key: "arc-agi-2",  scoreCol: "Score" },
   "swe_bench_verified.csv":       { key: "swe-bench",  scoreCol: "mean_score" },
+  "mmlu_external.csv":            { key: "mmlu",       scoreCol: "EM" },
 };
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -821,7 +823,9 @@ async function main() {
 
   // Emit null rows for benchmarks with NO data at all (e.g., if a source was down)
   // Benchmarks already in byBenchmark are fully handled by the cumulative-best loop above
-  const allBenchmarks = ["swe-bench", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime"];
+  // Automated benchmarks (ingested from sources). Manual seeds (humaneval, swe-bench-pro) are excluded.
+  const automatedBenchmarks = ["swe-bench", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime", "mmlu"];
+  const allBenchmarks = automatedBenchmarks;
   for (const benchKey of allBenchmarks) {
     if (byBenchmark[benchKey]) continue; // Already processed above
     for (const lab of LAB_KEYS) {
@@ -868,19 +872,19 @@ async function main() {
     process.exit(1);
   }
 
-  // Delete all existing rows and insert fresh data.
-  console.log(`\n3. Replacing ${allRows.length} rows in Supabase (delete + insert)...`);
+  // Delete only automated benchmark rows (preserves manual seeds like humaneval, swe-bench-pro)
+  console.log(`\n3. Replacing ${allRows.length} rows in Supabase (scoped delete + insert)...`);
 
   const { error: delError } = await supabase
     .from("benchmark_scores")
     .delete()
-    .gte("quarter", "Q1 2000"); // match all rows (delete requires a filter)
+    .in("benchmark", automatedBenchmarks);
 
   if (delError) {
     console.error("   DELETE failed:", delError.message);
     process.exit(1);
   }
-  console.log("   Deleted all existing benchmark_scores rows.");
+  console.log(`   Deleted existing rows for automated benchmarks: ${automatedBenchmarks.join(", ")}`);
 
   // Insert in chunks of 500 to stay within Supabase limits
   const BATCH_SIZE = 500;
