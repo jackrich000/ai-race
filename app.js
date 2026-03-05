@@ -1,3 +1,6 @@
+// ─── Constants ───────────────────────────────────────────────
+const CHART_DPR = 3;
+
 // ─── State ───────────────────────────────────────────────────
 let currentBenchmark = null; // Set to first benchmark key on init
 let currentMode = "frontier"; // "frontier" | "race" | "cost"
@@ -414,6 +417,7 @@ function renderChart() {
         },
         y: yScale,
       },
+      devicePixelRatio: CHART_DPR,
     },
   });
 }
@@ -552,6 +556,86 @@ function renderInfoArea() {
     });
   });
 }
+
+// ─── Chart Export ─────────────────────────────────────────────
+function getExportFilename() {
+  if (currentMode === "cost") {
+    if (currentCostBenchmark) {
+      const meta = COST_BENCHMARK_META[currentCostBenchmark];
+      return `Cost of Intelligence — ${meta.name} (${meta.thresholdLabel})`;
+    }
+    return "Cost of Intelligence — All Benchmarks";
+  }
+  if (currentMode === "race") {
+    const bench = BENCHMARKS[currentBenchmark];
+    return bench ? `Lab Race — ${bench.name}` : "Lab Race";
+  }
+  if (selectedLab) {
+    const lab = LABS[selectedLab];
+    return lab ? `Frontier Progress — ${lab.name}` : "Frontier Progress";
+  }
+  return "Frontier Progress — All Labs";
+}
+
+function buildExportCanvas() {
+  const sourceCanvas = document.getElementById("benchmarkChart");
+  const chartW = sourceCanvas.width;
+  const chartH = sourceCanvas.height;
+  const pad = 24 * CHART_DPR;
+  const citationH = 36 * CHART_DPR;
+  const totalW = chartW + pad * 2;
+  const totalH = chartH + pad + citationH;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = totalW;
+  canvas.height = totalH;
+  const ctx = canvas.getContext("2d");
+
+  // Background
+  ctx.fillStyle = "#0f1117";
+  ctx.fillRect(0, 0, totalW, totalH);
+
+  // Chart image
+  ctx.drawImage(sourceCanvas, pad, pad, chartW, chartH);
+
+  // Citation footer
+  const citationY = totalH - citationH * 0.35;
+  ctx.fillStyle = "#5f6368";
+  ctx.font = `${10 * CHART_DPR}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  ctx.textAlign = "left";
+  ctx.fillText("ai-race.vercel.app", pad, citationY);
+  ctx.textAlign = "right";
+  ctx.fillText("Data: Epoch AI, SWE-bench, ARC Prize, Artificial Analysis", totalW - pad, citationY);
+
+  return canvas;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const copyBtn = document.getElementById("copyChartBtn");
+  const downloadBtn = document.getElementById("downloadChartBtn");
+
+  copyBtn.addEventListener("click", async () => {
+    try {
+      const canvas = buildExportCanvas();
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      copyBtn.style.color = "#10b981";
+      copyBtn.style.borderColor = "#10b981";
+      setTimeout(() => { copyBtn.style.color = ""; copyBtn.style.borderColor = ""; }, 1500);
+    } catch (err) {
+      console.error("Copy failed:", err);
+    }
+  });
+
+  downloadBtn.addEventListener("click", () => {
+    const canvas = buildExportCanvas();
+    const link = document.createElement("a");
+    const name = getExportFilename().replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, "-").toLowerCase();
+    link.download = `${name}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  });
+});
 
 // ─── AI Analysis ──────────────────────────────────────────────
 (function initAnalysis() {

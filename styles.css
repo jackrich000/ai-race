@@ -142,6 +142,38 @@ main {
   height: 420px;
 }
 
+/* Chart export buttons */
+.chart-actions {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.75rem;
+  display: flex;
+  gap: 0.35rem;
+  z-index: 10;
+}
+
+.chart-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  padding: 0.3rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chart-action-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.chart-action-btn svg {
+  flex-shrink: 0;
+}
+
 /* Info card */
 .info-card {
   background: var(--bg-secondary);

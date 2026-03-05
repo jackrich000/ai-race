@@ -28,6 +28,19 @@
     </div>
 
     <div class="chart-container">
+      <div class="chart-actions">
+        <button class="chart-action-btn" id="copyChartBtn" title="Copy chart to clipboard">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/>
+            <path d="M10.5 5.5V3.5a1.5 1.5 0 00-1.5-1.5H3.5A1.5 1.5 0 002 3.5V9a1.5 1.5 0 001.5 1.5h2"/>
+          </svg>
+        </button>
+        <button class="chart-action-btn" id="downloadChartBtn" title="Download chart as PNG">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 2v8.5M4.5 7.5L8 11l3.5-3.5M2.5 13h11"/>
+          </svg>
+        </button>
+      </div>
       <canvas id="benchmarkChart"></canvas>
     </div>
 
