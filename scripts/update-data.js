@@ -835,8 +835,26 @@ async function main() {
     console.log(`   ${benchKey}: ${totalPoints} points, labs=[${labsWithData.join(",")}], sources=[${sources.join(",")}]`);
   }
 
+  // Sanity check: abort if any benchmark has zero data points (likely source outage)
+  const emptyBenchmarks = allBenchmarks.filter(b =>
+    byBenchmark[b] && LAB_KEYS.every(l => !(byBenchmark[b][l] || []).length)
+  );
+  const missingBenchmarks = allBenchmarks.filter(b => !byBenchmark[b]);
+  if (emptyBenchmarks.length > 0 || missingBenchmarks.length > 0) {
+    const problems = [...emptyBenchmarks, ...missingBenchmarks];
+    console.error(`\n   ABORT: No data for benchmarks: ${problems.join(", ")}`);
+    console.error("   This likely means a data source is down. Skipping write to preserve existing data.");
+    process.exit(1);
+  }
+
+  const nonNullRows = allRows.filter(r => r.score !== null).length;
+  if (nonNullRows < 100) {
+    console.error(`\n   ABORT: Only ${nonNullRows} non-null scores (expected ~200). Possible data source failure.`);
+    console.error("   Skipping write to preserve existing data.");
+    process.exit(1);
+  }
+
   // Delete all existing rows and insert fresh data.
-  // This fixes the root cause where upsert silently ignores null overwrites.
   console.log(`\n3. Replacing ${allRows.length} rows in Supabase (delete + insert)...`);
 
   const { error: delError } = await supabase
@@ -909,6 +927,12 @@ async function main() {
     } else {
       console.log(`   ${benchKey}: no data points above threshold`);
     }
+  }
+
+  const nonNullCostRows = costRows.filter(r => r.price !== null).length;
+  if (nonNullCostRows === 0) {
+    console.error("\n   ABORT: Zero cost data points. Skipping write to preserve existing data.");
+    process.exit(1);
   }
 
   // Delete all existing cost rows and insert fresh data
