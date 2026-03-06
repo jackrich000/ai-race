@@ -100,6 +100,7 @@ const MODEL_LAB_PATTERNS = [
   [/kimi/i,          "chinese"],
   [/minimax/i,       "chinese"],
   [/glm/i,           "chinese"],
+  [/doubao/i,        "chinese"],
 ];
 
 // ARC Prize: start-anchored version to reject third-party scaffolds
