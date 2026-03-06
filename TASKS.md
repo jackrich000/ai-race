@@ -19,7 +19,7 @@ Minimum viable launch. Organized into waves for parallel execution.
 ### Wave 2 — After Wave 1 merges
 
 - [x] **Review recent PRs (benchmark lifecycle + LLM analysis)** — Detailed review of PRs #11 and #12. Three focus areas: (1) Review LLM analysis prompt and output quality in detail, (2) Think through deprecation/saturation logic and how it's labelled in the UI, (3) Retest copy-to-clipboard and image export to verify they work correctly after the benchmark lifecycle changes.
-- [ ] **Unified date filter** *(single worktree)* — Single date filter controls both chart view and AI analysis. Remove the "generate analysis" button entirely. Chart updates and analysis auto-generates for selected period. **Also:** add rate limiting + response caching on `/api/analyze`; redesign analysis panel — copy icon (not text button, match chart style with green flash), headlines-first layout with individual copy buttons per headline.
+- [x] **Unified date filter** *(single worktree)* — Single date filter controls both chart view and AI analysis. Remove the "generate analysis" button entirely. Chart updates and analysis auto-generates for selected period. **Also:** add rate limiting + response caching on `/api/analyze`; redesign analysis panel — copy icon (not text button, match chart style with green flash), headlines-first layout with individual copy buttons per headline.
 - [x] **Error / loading states** — Handle Supabase slowness or API failures gracefully. A blank chart or crash kills trust.
 
 ### Wave 3 — Data completeness
@@ -34,6 +34,7 @@ Minimum viable launch. Organized into waves for parallel execution.
 
 - [ ] **Security audit** — Deep dive all potential security holes and risks before public release. Execute necessary improvements.
 - [ ] **Design, accessibility & responsiveness review** — Not a redesign. High-impact / low-effort pass: contrast, focus states, aria labels, colour-blind friendliness, visual hierarchy, spacing. Also responsiveness: desktop sizing/scaling at 100% zoom, mobile pitfalls (hardcoded px widths, missing overflow handling, media query gaps, font sizing).
+- [ ] **Refine AI analysis prompt & UI** — Tweak prompt for longer timeframes; enforce Xx notation when change >2x and % when <2x. Reconsider analysis UI: current per-section cards vs single card for the whole report.
 - [ ] **Code cleanliness review & refactor** — Review codebase, refactor where valuable.
 - [ ] **Add contact / author details** — Add links to Jack's Substack and LinkedIn somewhere on the site, so visitors can reach out if it gets traction. Keep it subtle (e.g. footer or small "by" line).
 - [ ] **Write LinkedIn post to announce site**
