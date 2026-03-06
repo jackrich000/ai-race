@@ -31,8 +31,7 @@ Frontier scores on leading, active benchmarks grew by an average of [avgGrowthPc
 ### Cost of Intelligence
 
 [FOR EACH cost benchmark where cheaperMultiple represents a >= 10% decline:]
-It became [Xx cheaper] to match [threshold description] on [benchmark name] — down from $[startPrice] to $[endPrice] per million tokens.
-Use "Xx cheaper" when cheaperMultiple >= 2. For cheaperMultiple < 2, express as a percentage drop instead (e.g. "costs fell 30%").
+It became [Xx cheaper / X% cheaper] to match [threshold description] on [benchmark name] — down from $[startPrice] to $[endPrice] per million tokens.
 
 [OMIT this entire section if no cost benchmark showed a meaningful decline (>= 10%).]
 
@@ -45,6 +44,7 @@ Use "Xx cheaper" when cheaperMultiple >= 2. For cheaperMultiple < 2, express as 
 === RULES ===
 - Tone: straightforward, no-bullshit. No corporate filler, no hedging ("it's worth noting", "interestingly"), no throat-clearing.
 - Use pre-computed numbers from the stats JSON. Do not recalculate.
+- When expressing any change: use "Xx" for multiples >= 2 (e.g. "4x growth"), use percentage for changes < 2x (e.g. "rose 60%"). Apply this consistently across all sections.
 - "Driven by" sentences MUST cite specific model names and score jumps from the raw data.
 - Headlines must include concrete numbers and lab names. Do NOT use **bold** formatting within headlines — plain text only.
 - Formatting: Use ## and ### headings exactly as shown. Use **bold** for lab names on first mention and cost figures (but NOT in headlines). Use - for headline bullets. Blank line between sections.
