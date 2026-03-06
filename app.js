@@ -13,10 +13,14 @@ let currentBenchmark = null; // Set to first benchmark key on init
 let currentMode = "frontier"; // "frontier" | "race" | "cost"
 let selectedLab = null;   // null = "All Labs", or a lab key like "openai"
 let currentCostBenchmark = null; // null = all, or "gpqa" / "mmlu-pro"
+let currentDateRange = "all-time";
 let chart = null;
 let chartMode = null; // tracks which mode the chart was built for
 let isolatedIndex = null;
 let highlightedInactiveIndex = null; // currently highlighted inactive dataset
+
+// Clipboard SVG icon for copy buttons
+const COPY_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V3.5a1.5 1.5 0 00-1.5-1.5H3.5A1.5 1.5 0 002 3.5V9a1.5 1.5 0 001.5 1.5h2"/></svg>';
 
 // Category colors for tab dots
 const CATEGORY_COLORS = {
@@ -55,12 +59,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!currentBenchmark || !BENCHMARKS[currentBenchmark]) {
       currentBenchmark = Object.keys(BENCHMARKS).find(k => isBenchmarkActive(k, getFilterEndDate())) || Object.keys(BENCHMARKS)[0];
     }
+    populateDateRangeYears();
     renderModeToggle();
     renderFilterPills();
     renderChart();
     renderCustomLegend();
     renderInfoArea();
     showLoading(false);
+    fetchAnalysis("all-time");
+
+    // Wire date range dropdown
+    document.getElementById("dateRange").addEventListener("change", (e) => {
+      currentDateRange = e.target.value;
+      applyDateRange();
+      fetchAnalysis(currentDateRange);
+    });
   } catch (err) {
     console.error("Failed to load data:", err);
     showError("Failed to load benchmark data. Please try refreshing the page.");
@@ -524,6 +537,8 @@ function renderChart() {
         return line;
       };
 
+  const dateBounds = computeDateBounds(currentDateRange);
+
   chart = new Chart(ctx, {
     type: "line",
     data: {
@@ -564,6 +579,8 @@ function renderChart() {
         x: {
           grid: { color: "rgba(45, 49, 64, 0.5)" },
           ticks: { color: "#5f6368", font: { size: 11 } },
+          min: dateBounds.startLabel || undefined,
+          max: dateBounds.endLabel || undefined,
         },
         y: yScale,
       },
@@ -883,7 +900,7 @@ function updateChart() {
 
   chart.data.datasets = buildDatasets();
   chart.data.datasets.forEach((_, i) => chart.setDatasetVisibility(i, true));
-  chart.update();
+  applyDateRange();
   renderCustomLegend();
 
   // Check empty state after update
@@ -1006,6 +1023,169 @@ function renderInfoArea() {
         icon.textContent = "\u2212";
         header.setAttribute("aria-expanded", "true");
       }
+    });
+  });
+}
+
+// ─── Date Range ──────────────────────────────────────────────
+function populateDateRangeYears() {
+  const select = document.getElementById("dateRange");
+  const years = [...new Set(TIME_LABELS.map(q => q.substring(3)))];
+  for (const year of years) {
+    const opt = document.createElement("option");
+    opt.value = year;
+    opt.textContent = year;
+    select.appendChild(opt);
+  }
+}
+
+function computeDateBounds(preset) {
+  if (preset === "all-time") return { startLabel: null, endLabel: null };
+
+  const endIdx = TIME_LABELS.length - 1;
+
+  if (preset === "last-12-months") {
+    const si = Math.max(0, endIdx - 4);
+    return { startLabel: TIME_LABELS[si], endLabel: TIME_LABELS[endIdx] };
+  }
+  if (preset === "last-6-months") {
+    const si = Math.max(0, endIdx - 2);
+    return { startLabel: TIME_LABELS[si], endLabel: TIME_LABELS[endIdx] };
+  }
+  if (preset === "last-3-months") {
+    const si = Math.max(0, endIdx - 1);
+    return { startLabel: TIME_LABELS[si], endLabel: TIME_LABELS[endIdx] };
+  }
+
+  // Year preset
+  const year = parseInt(preset);
+  if (!isNaN(year)) {
+    const q1 = `Q1 ${year}`;
+    const q4 = `Q4 ${year}`;
+    const si = TIME_LABELS.indexOf(q1);
+    const ei = TIME_LABELS.indexOf(q4);
+    return {
+      startLabel: si >= 0 ? TIME_LABELS[si] : TIME_LABELS[0],
+      endLabel: ei >= 0 ? TIME_LABELS[ei] : TIME_LABELS[endIdx],
+    };
+  }
+
+  return { startLabel: null, endLabel: null };
+}
+
+function applyDateRange() {
+  if (!chart) return;
+  const { startLabel, endLabel } = computeDateBounds(currentDateRange);
+  chart.options.scales.x.min = startLabel || undefined;
+  chart.options.scales.x.max = endLabel || undefined;
+  chart.update();
+}
+
+// ─── Analysis fetch & render ─────────────────────────────────
+function renderMarkdown(md) {
+  return escapeHtml(md)
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/^- (.+)$/gm, "<li>$1</li>")
+    .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
+    .replace(/\n{2,}/g, "</p><p>")
+    .replace(/^(?!<[hup]|<li|<ul)(.+)$/gm, "<p>$1</p>")
+    .replace(/<p><\/p>/g, "");
+}
+
+async function fetchAnalysis(preset) {
+  const section = document.getElementById("analysisSection");
+  section.innerHTML = '<div class="analysis-loading-inline"><div class="spinner"></div></div>';
+
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/cached_analyses?date_range=eq.${encodeURIComponent(preset)}&select=analysis&limit=1`;
+    const resp = await fetch(url, {
+      headers: {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+    });
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const rows = await resp.json();
+
+    if (rows.length === 0 || !rows[0].analysis) {
+      section.innerHTML = '<div class="analysis-empty">No analysis available for this time range.</div>';
+      return;
+    }
+
+    renderAnalysisSections(rows[0].analysis, section);
+  } catch (err) {
+    console.error("Failed to fetch analysis:", err);
+    section.innerHTML = '<div class="analysis-empty">Failed to load analysis.</div>';
+  }
+}
+
+function renderAnalysisSections(markdown, container) {
+  // Split on ### headers
+  const sections = [];
+  let currentSection = null;
+
+  for (const line of markdown.split("\n")) {
+    if (line.startsWith("### ")) {
+      if (currentSection) sections.push(currentSection);
+      currentSection = { title: line.substring(4).trim(), lines: [] };
+    } else if (line.startsWith("## ")) {
+      // Top-level heading — render as intro
+      if (currentSection) sections.push(currentSection);
+      currentSection = { title: null, rawTitle: line.substring(3).trim(), lines: [] };
+    } else {
+      if (currentSection) currentSection.lines.push(line);
+      else {
+        currentSection = { title: null, lines: [line] };
+      }
+    }
+  }
+  if (currentSection) sections.push(currentSection);
+
+  let html = '';
+
+  for (const sec of sections) {
+    if (sec.rawTitle) {
+      // Top-level ## heading
+      html += `<div class="analysis-heading"><h2>${escapeHtml(sec.rawTitle)}</h2></div>`;
+      continue;
+    }
+
+    const body = sec.lines.join("\n").trim();
+    if (!body && !sec.title) continue;
+
+    if (sec.title === "Headlines") {
+      // Render each bullet as a separate item with its own copy button
+      const bullets = body.split("\n").filter(l => l.startsWith("- ")).map(l => l.substring(2).trim());
+      html += '<div class="analysis-card headlines-card">';
+      html += '<div class="section-header"><h3>Headlines</h3></div>';
+      html += '<ul class="headline-list">';
+      for (const bullet of bullets) {
+        const rendered = renderMarkdown("- " + bullet).replace(/<\/?ul>/g, "").replace(/<\/?li>/g, "");
+        html += `<li class="headline-item"><span class="headline-text">${rendered.trim()}</span><button class="copy-icon-btn" title="Copy headline" data-copy-text="${escapeHtml(bullet)}">${COPY_ICON_SVG}</button></li>`;
+      }
+      html += '</ul></div>';
+    } else if (sec.title) {
+      // Body section with heading + copy icon
+      const rendered = renderMarkdown(body);
+      const plainText = body.replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1");
+      html += `<div class="analysis-card"><div class="section-header"><h3>${escapeHtml(sec.title)}</h3><button class="copy-icon-btn" title="Copy section" data-copy-text="${escapeHtml(sec.title + "\n\n" + plainText)}">${COPY_ICON_SVG}</button></div><div class="analysis-text">${rendered}</div></div>`;
+    }
+  }
+
+  container.innerHTML = html;
+
+  // Wire copy buttons
+  container.querySelectorAll(".copy-icon-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const text = btn.getAttribute("data-copy-text");
+      navigator.clipboard.writeText(text).then(() => {
+        btn.style.color = "#10b981";
+        setTimeout(() => { btn.style.color = ""; }, 1500);
+      });
     });
   });
 }
@@ -1146,339 +1326,3 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-// ─── AI Analysis ──────────────────────────────────────────────
-(function initAnalysis() {
-  let selectedRange = 3;
-
-  document.addEventListener("DOMContentLoaded", () => {
-    const pills = document.querySelectorAll(".time-range-pills .filter-pill");
-    const customRange = document.getElementById("customRange");
-    const rangeFrom = document.getElementById("rangeFrom");
-    const rangeTo = document.getElementById("rangeTo");
-    const generateBtn = document.getElementById("generateBtn");
-    const outputEl = document.getElementById("analysisOutput");
-    const textEl = document.getElementById("analysisText");
-    const loadingEl = document.getElementById("analysisLoading");
-    const copyBtn = document.getElementById("copyBtn");
-
-    // Populate quarter dropdowns
-    TIME_LABELS.forEach(q => {
-      rangeFrom.appendChild(new Option(q, q));
-      rangeTo.appendChild(new Option(q, q));
-    });
-    rangeTo.value = TIME_LABELS[TIME_LABELS.length - 1];
-    if (TIME_LABELS.length > 4) rangeFrom.value = TIME_LABELS[TIME_LABELS.length - 5];
-
-    // Range pill clicks
-    pills.forEach(pill => {
-      pill.addEventListener("click", () => {
-        pills.forEach(p => p.classList.remove("active"));
-        pill.classList.add("active");
-        const range = pill.dataset.range;
-        if (range === "custom") {
-          selectedRange = "custom";
-          customRange.hidden = false;
-        } else {
-          selectedRange = parseInt(range);
-          customRange.hidden = true;
-        }
-      });
-    });
-
-    generateBtn.addEventListener("click", () => generateAnalysis());
-    copyBtn.addEventListener("click", () => copyAnalysis());
-
-    function getQuarterRange() {
-      if (selectedRange === "custom") {
-        const fromIdx = TIME_LABELS.indexOf(rangeFrom.value);
-        const toIdx = TIME_LABELS.indexOf(rangeTo.value);
-        return { startIdx: Math.min(fromIdx, toIdx), endIdx: Math.max(fromIdx, toIdx) };
-      }
-      const quartersBack = Math.ceil(selectedRange / 3);
-      const endIdx = TIME_LABELS.length - 1;
-      const startIdx = Math.max(0, endIdx - quartersBack);
-      return { startIdx, endIdx };
-    }
-
-    function getDataForRange(startIdx, endIdx) {
-      const filterEnd = getFilterEndDate();
-      let lines = [];
-      for (const [benchKey, bench] of Object.entries(BENCHMARKS)) {
-        const meta = BENCHMARK_META[benchKey];
-        const isInactive = !isBenchmarkActive(benchKey, filterEnd);
-        let header = `\n## ${bench.name} (${bench.category})`;
-        if (isInactive && meta.status === "saturated") {
-          header += ` [SATURATED - ${meta.activeUntil}]`;
-        } else if (isInactive && meta.status === "deprecated") {
-          header += ` [DEPRECATED - ${meta.activeUntil}]`;
-        }
-        lines.push(header);
-        for (const [labKey, lab] of Object.entries(LABS)) {
-          const scores = bench.scores[labKey].slice(startIdx, endIdx + 1);
-          const labels = TIME_LABELS.slice(startIdx, endIdx + 1);
-          const parts = scores.map((d, i) =>
-            d ? `${labels[i]}: ${d.score}%${d.model ? " (" + d.model + ")" : ""}` : `${labels[i]}: -`
-          );
-          lines.push(`${lab.name}: ${parts.join(" | ")}`);
-        }
-      }
-      return lines.join("\n");
-    }
-
-    // --- Pre-compute helpers for structured analysis ---
-
-    function getLatestScore(scoresArray, maxIdx) {
-      for (let i = maxIdx; i >= 0; i--) {
-        if (scoresArray[i]) return { score: scoresArray[i].score, model: scoresArray[i].model };
-      }
-      return null;
-    }
-
-    function computeRankings(startIdx, endIdx) {
-      const labKeys = Object.keys(LABS);
-      const benchKeys = Object.keys(BENCHMARKS);
-
-      function rankAtIndex(idx) {
-        const perLab = {};
-        for (const labKey of labKeys) perLab[labKey] = { ranks: [], firsts: 0, detail: {} };
-
-        for (const benchKey of benchKeys) {
-          const bench = BENCHMARKS[benchKey];
-          // Collect scores for each lab at this index
-          const entries = [];
-          for (const labKey of labKeys) {
-            const entry = getLatestScore(bench.scores[labKey], idx);
-            if (entry) entries.push({ labKey, score: entry.score, model: entry.model });
-          }
-          if (entries.length === 0) continue;
-
-          // Sort descending by score
-          entries.sort((a, b) => b.score - a.score);
-
-          // Dense ranking (1,1,2 for ties)
-          let rank = 1;
-          for (let i = 0; i < entries.length; i++) {
-            if (i > 0 && entries[i].score < entries[i - 1].score) rank++;
-            const lab = entries[i].labKey;
-            perLab[lab].ranks.push(rank);
-            perLab[lab].detail[benchKey] = { rank, score: entries[i].score, model: entries[i].model };
-            if (rank === 1) perLab[lab].firsts++;
-          }
-        }
-
-        // Compute averages
-        const result = {};
-        for (const labKey of labKeys) {
-          const d = perLab[labKey];
-          if (d.ranks.length === 0) continue;
-          result[labKey] = {
-            avgRank: Math.round((d.ranks.reduce((a, b) => a + b, 0) / d.ranks.length) * 10) / 10,
-            firsts: d.firsts,
-            benchmarksRanked: d.ranks.length,
-            detail: d.detail,
-          };
-        }
-        return result;
-      }
-
-      const startRanks = rankAtIndex(startIdx);
-      const endRanks = rankAtIndex(endIdx);
-
-      // Identify leader (lowest avg rank at end)
-      let leader = null, lowestAvg = Infinity;
-      for (const [labKey, data] of Object.entries(endRanks)) {
-        if (data.avgRank < lowestAvg) { lowestAvg = data.avgRank; leader = labKey; }
-      }
-
-      // Identify biggest loser (largest increase in avg rank)
-      let biggestLoser = null, biggestDrop = -Infinity;
-      for (const [labKey, endData] of Object.entries(endRanks)) {
-        const startData = startRanks[labKey];
-        if (!startData) continue;
-        const drop = endData.avgRank - startData.avgRank;
-        if (drop > biggestDrop) { biggestDrop = drop; biggestLoser = labKey; }
-      }
-      // If no one got worse, biggestLoser stays null
-      if (biggestDrop <= 0) biggestLoser = null;
-
-      return {
-        leader: leader ? {
-          lab: LABS[leader].name,
-          labKey: leader,
-          startAvgRank: startRanks[leader] ? startRanks[leader].avgRank : null,
-          startFirsts: startRanks[leader] ? startRanks[leader].firsts : 0,
-          endAvgRank: endRanks[leader].avgRank,
-          endFirsts: endRanks[leader].firsts,
-          detail: endRanks[leader].detail,
-        } : null,
-        biggestLoser: biggestLoser ? {
-          lab: LABS[biggestLoser].name,
-          labKey: biggestLoser,
-          startAvgRank: startRanks[biggestLoser].avgRank,
-          startFirsts: startRanks[biggestLoser].firsts,
-          endAvgRank: endRanks[biggestLoser].avgRank,
-          endFirsts: endRanks[biggestLoser].firsts,
-          detail: endRanks[biggestLoser].detail,
-        } : null,
-      };
-    }
-
-    function computeFrontierGrowth(startIdx, endIdx) {
-      const labKeys = Object.keys(LABS);
-      const results = [];
-      for (const [benchKey, bench] of Object.entries(BENCHMARKS)) {
-        let startMax = null, endMax = null;
-        for (const labKey of labKeys) {
-          const s = getLatestScore(bench.scores[labKey], startIdx);
-          const e = getLatestScore(bench.scores[labKey], endIdx);
-          if (s && (startMax === null || s.score > startMax)) startMax = s.score;
-          if (e && (endMax === null || e.score > endMax)) endMax = e.score;
-        }
-        if (startMax === null || endMax === null || startMax === 0) continue;
-        const growth = Math.round(((endMax - startMax) / startMax) * 1000) / 10;
-        results.push({
-          benchmark: bench.name,
-          description: bench.description.split(" — ")[0],
-          startScore: startMax,
-          endScore: endMax,
-          growthPct: growth,
-        });
-      }
-      results.sort((a, b) => b.growthPct - a.growthPct);
-      const avg = results.length > 0 ? Math.round((results.reduce((s, r) => s + r.growthPct, 0) / results.length) * 10) / 10 : 0;
-      return { benchmarks: results, avgGrowthPct: avg, biggestMover: results[0] || null };
-    }
-
-    function computeCostDecline(startIdx, endIdx) {
-      const results = [];
-      for (const [benchKey, meta] of Object.entries(COST_BENCHMARK_META)) {
-        const data = COST_DATA[benchKey];
-        if (!data) continue;
-
-        // Find entry at/before start and end
-        let startEntry = null, endEntry = null;
-        for (let i = startIdx; i >= 0; i--) {
-          if (data.entries[i]) { startEntry = data.entries[i]; break; }
-        }
-        for (let i = endIdx; i >= 0; i--) {
-          if (data.entries[i]) { endEntry = data.entries[i]; break; }
-        }
-
-        if (!startEntry || !endEntry || startEntry.price <= 0 || endEntry.price <= 0) {
-          results.push({ benchmark: meta.name, threshold: meta.thresholdLabel, cheaperMultiple: null, description: meta.description, context: meta.context });
-          continue;
-        }
-
-        const multiple = Math.round((startEntry.price / endEntry.price) * 10) / 10;
-        results.push({
-          benchmark: meta.name,
-          threshold: meta.thresholdLabel,
-          startPrice: startEntry.price,
-          endPrice: endEntry.price,
-          startModel: startEntry.model,
-          endModel: endEntry.model,
-          cheaperMultiple: multiple,
-          description: meta.description,
-          context: meta.context,
-        });
-      }
-      return results;
-    }
-
-    // --- End pre-compute helpers ---
-
-    async function generateAnalysis() {
-      const { startIdx, endIdx } = getQuarterRange();
-      const startQ = TIME_LABELS[startIdx];
-      const endQ = TIME_LABELS[endIdx];
-      const benchmarkData = getDataForRange(startIdx, endIdx);
-
-      // Pre-compute statistics for structured analysis
-      const frontierGrowth = computeFrontierGrowth(startIdx, endIdx);
-      const rankings = computeRankings(startIdx, endIdx);
-      const filterEnd = getFilterEndDate();
-      const activeBenchKeys = Object.keys(BENCHMARKS).filter(k => isBenchmarkActive(k, filterEnd));
-      const labCoverage = {};
-      for (const [labKey, lab] of Object.entries(LABS)) {
-        let has = 0;
-        for (const bk of activeBenchKeys) {
-          const latest = getLatestScore(BENCHMARKS[bk].scores[labKey], endIdx);
-          if (latest) has++;
-        }
-        labCoverage[lab.name] = `${has}/${activeBenchKeys.length} active benchmarks`;
-      }
-      // Benchmarks defeated (saturated/deprecated) during the selected range
-      const defeatedThisPeriod = [];
-      for (const [benchKey, meta] of Object.entries(BENCHMARK_META)) {
-        if (!meta.activeUntil) continue;
-        if (compareQuarters(meta.activeUntil, startQ) >= 0 && compareQuarters(meta.activeUntil, endQ) <= 0) {
-          defeatedThisPeriod.push({
-            name: meta.name,
-            status: meta.status,
-            activeUntil: meta.activeUntil,
-            reason: meta.inactiveReason,
-          });
-        }
-      }
-      const stats = {
-        frontierGrowth,
-        leader: rankings.leader,
-        biggestLoser: rankings.biggestLoser,
-        activeBenchmarkCount: frontierGrowth.benchmarks.length,
-        labDataCoverage: labCoverage,
-        defeatedThisPeriod,
-      };
-      const costData = computeCostDecline(startIdx, endIdx);
-
-      generateBtn.disabled = true;
-      loadingEl.hidden = false;
-      outputEl.hidden = true;
-
-      try {
-        const resp = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ startQuarter: startQ, endQuarter: endQ, benchmarkData, stats, costData }),
-        });
-
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          throw new Error(err.error || `HTTP ${resp.status}`);
-        }
-
-        const { analysis } = await resp.json();
-        textEl.style.color = "";
-        textEl.innerHTML = renderMarkdown(analysis);
-        outputEl.hidden = false;
-      } catch (err) {
-        textEl.textContent = "Error: " + err.message;
-        textEl.style.color = "#ef4444";
-        outputEl.hidden = false;
-      } finally {
-        generateBtn.disabled = false;
-        loadingEl.hidden = true;
-      }
-    }
-
-    function copyAnalysis() {
-      const text = textEl.innerText;
-      navigator.clipboard.writeText(text).then(() => {
-        copyBtn.textContent = "Copied!";
-        setTimeout(() => { copyBtn.textContent = "Copy to clipboard"; }, 2000);
-      });
-    }
-
-    function renderMarkdown(md) {
-      return escapeHtml(md)
-        .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-        .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-        .replace(/\*(.+?)\*/g, "<em>$1</em>")
-        .replace(/^- (.+)$/gm, "<li>$1</li>")
-        .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
-        .replace(/\n{2,}/g, "</p><p>")
-        .replace(/^(?!<[hup]|<li|<ul)(.+)$/gm, "<p>$1</p>")
-        .replace(/<p><\/p>/g, "");
-    }
-  });
-})();

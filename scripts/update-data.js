@@ -979,6 +979,8 @@ async function main() {
 
   console.log(`   Inserted ${costRows.length} cost rows successfully.`);
   console.log("\nDone!");
+  console.log("\nReminder: Run generate-analyses.js to update cached AI analyses:");
+  console.log("  SUPABASE_SERVICE_KEY=xxx ANTHROPIC_API_KEY=xxx node scripts/generate-analyses.js");
 }
 
 main().catch(err => {

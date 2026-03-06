@@ -36,6 +36,13 @@
         <button class="mode-btn" data-mode="race" role="tab" aria-selected="false">Lab Race</button>
         <button class="mode-btn" data-mode="cost" role="tab" aria-selected="false">Cost of Intelligence</button>
       </div>
+      <select id="dateRange" class="date-range-select">
+        <option value="all-time" selected>All-time</option>
+        <option value="last-12-months">Last 12 months</option>
+        <option value="last-6-months">Last 6 months</option>
+        <option value="last-3-months">Last 3 months</option>
+        <!-- Year options populated dynamically by app.js -->
+      </select>
     </div>
 
     <div class="filter-pills" id="filterPills" role="tablist" aria-label="Filter selector">
@@ -62,30 +69,8 @@
       </div>
     </div>
 
-    <div class="analysis-panel" id="analysisPanel">
-      <h3>AI Analysis</h3>
-      <div class="analysis-controls">
-        <div class="time-range-pills">
-          <button class="filter-pill active" data-range="3">3 months</button>
-          <button class="filter-pill" data-range="6">6 months</button>
-          <button class="filter-pill" data-range="12">12 months</button>
-          <button class="filter-pill" data-range="custom">Custom</button>
-        </div>
-        <div class="custom-range" id="customRange" hidden>
-          <select id="rangeFrom"></select>
-          <span>to</span>
-          <select id="rangeTo"></select>
-        </div>
-        <button class="generate-btn" id="generateBtn">Generate Analysis</button>
-      </div>
-      <div class="analysis-loading" id="analysisLoading" hidden>
-        <div class="spinner"></div>
-        <span>Analyzing trends…</span>
-      </div>
-      <div class="analysis-output" id="analysisOutput" hidden>
-        <button class="copy-btn" id="copyBtn">Copy to clipboard</button>
-        <div class="analysis-text" id="analysisText"></div>
-      </div>
+    <div class="analysis-section" id="analysisSection">
+      <!-- Populated by app.js: cached analysis from Supabase -->
     </div>
 
     <div class="info-card" id="infoCard">
