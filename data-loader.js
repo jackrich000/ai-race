@@ -142,16 +142,29 @@ const COST_BENCHMARK_META = {
 
 let BENCHMARKS = {};
 let COST_DATA = {};
+let costLoadFailed = false;
 
 async function loadBenchmarkScores() {
   const url = `${SUPABASE_URL}/rest/v1/benchmark_scores?select=benchmark,lab,quarter,score,model&order=benchmark,lab,quarter`;
 
-  const response = await fetch(url, {
-    headers: {
-      "apikey": SUPABASE_ANON_KEY,
-      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === "AbortError") throw new Error("Request timed out");
+    throw err;
+  }
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
     throw new Error(`Supabase fetch failed: ${response.status} ${response.statusText}`);
@@ -198,15 +211,29 @@ async function loadBenchmarkScores() {
 async function loadCostData() {
   const url = `${SUPABASE_URL}/rest/v1/cost_intelligence?select=benchmark,quarter,price,model,lab,score,threshold&order=benchmark,quarter`;
 
-  const response = await fetch(url, {
-    headers: {
-      "apikey": SUPABASE_ANON_KEY,
-      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    console.warn("Cost data fetch failed:", err.name === "AbortError" ? "Request timed out" : err.message);
+    costLoadFailed = true;
+    return;
+  }
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
     console.warn("Cost data fetch failed:", response.status);
+    costLoadFailed = true;
     return;
   }
 
