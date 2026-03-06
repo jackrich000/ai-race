@@ -76,16 +76,19 @@ const BENCHMARK_META = {
   },
   "humaneval": {
     name: "HumanEval", category: "Coding", status: "saturated",
+    description: "164 hand-written Python programming problems testing code generation",
     activeUntil: "Q4 2024",
     inactiveReason: "Top models score 97%+, benchmark is effectively solved",
   },
   "arc-agi-1": {
     name: "ARC-AGI-1", category: "Reasoning", status: "deprecated",
+    description: "Measures novel pattern recognition and abstraction",
     activeUntil: "Q1 2025",
     inactiveReason: "Replaced by ARC-AGI-2, with first submissions in Q1 2025",
   },
   "swe-bench": {
     name: "SWE-bench Verified", category: "Coding", status: "saturated",
+    description: "Real GitHub issues from popular open-source Python repositories",
     activeUntil: "Q3 2025",
     inactiveReason: "Scores plateaued Q3 2025 due to known question-set ceiling; officially deprecated Feb 2026",
   },
@@ -479,7 +482,7 @@ ${JSON.stringify(costData, null, 2)}
 ${benchmarkData}`;
 
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
+    model: "claude-opus-4-6",
     max_tokens: 2048,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userPrompt }],
