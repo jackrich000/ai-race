@@ -517,8 +517,6 @@ function renderChart() {
           padding: 12,
           cornerRadius: 8,
           filter: (tooltipItem) => {
-            // Suppress standard tooltip entirely when hovering an inactive line
-            if (highlightedInactiveIndex !== null) return false;
             return !tooltipItem.dataset._isInactive;
           },
           callbacks: { label: tooltipLabel },
@@ -569,7 +567,7 @@ function renderCustomLegend() {
 
     const label = document.createElement("span");
     label.className = "legend-section-label";
-    label.textContent = "Inactive";
+    label.textContent = "~Defeated Benchmarks";
     container.appendChild(label);
 
     inactiveItems.forEach(({ ds, idx }) => {
@@ -591,6 +589,14 @@ function createLegendButton(ds, idx, isInactive) {
 
   const text = document.createTextNode(ds.label);
   btn.appendChild(text);
+
+  // Inactive items get a small info icon hint
+  if (isInactive) {
+    const hint = document.createElement("span");
+    hint.className = "legend-info-icon";
+    hint.textContent = "\u24d8"; // ⓘ
+    btn.appendChild(hint);
+  }
 
   // Click: isolate / restore
   btn.addEventListener("click", () => {
@@ -732,29 +738,14 @@ function unhighlightInactive(datasetIndex) {
   if (!ds || !ds._isInactive) return;
 
   highlightedInactiveIndex = null;
+  // Don't reset style if this benchmark is currently isolated (should stay colored)
+  if (isolatedIndex === datasetIndex) return;
   resetInactiveStyle(ds);
   chart.update("none");
 }
 
 function handleChartHover(event, elements) {
-  if (currentMode !== "frontier") return;
-
-  if (elements.length > 0) {
-    const dsIdx = elements[0].datasetIndex;
-    const ds = chart.data.datasets[dsIdx];
-    if (ds && ds._isInactive) {
-      highlightInactive(dsIdx);
-      const nativeEvent = event.native || event;
-      showInactiveTooltip(ds, nativeEvent.clientX, nativeEvent.clientY);
-      return;
-    }
-  }
-
-  // Unhighlight any currently highlighted inactive line
-  if (highlightedInactiveIndex !== null) {
-    unhighlightInactive(highlightedInactiveIndex);
-    hideInactiveTooltip();
-  }
+  // Inactive line hover is handled via legend only — no chart-area interaction
 }
 
 // ─── Inactive tooltip ────────────────────────────────────────
@@ -779,15 +770,19 @@ function showInactiveTooltip(ds, clientX, clientY) {
   // Find the latest non-null data point
   let latestScore = null;
   let latestModel = null;
+  let latestLab = null;
   let latestQuarter = null;
   for (let i = ds.data.length - 1; i >= 0; i--) {
     if (ds.data[i] != null) {
       latestScore = ds.data[i];
       latestModel = ds._models[i];
+      latestLab = ds._labs ? ds._labs[i] : null;
       latestQuarter = TIME_LABELS[i];
       break;
     }
   }
+
+  const labName = latestLab ? (LABS[latestLab]?.name || latestLab) : null;
 
   let html = `<div class="inactive-tooltip-name">${ds.label} <span class="status-badge ${statusClass}">${statusLabel} ${meta.activeUntil}</span></div>`;
   if (meta.inactiveReason) {
@@ -795,7 +790,8 @@ function showInactiveTooltip(ds, clientX, clientY) {
   }
   if (latestScore !== null) {
     html += `<div class="inactive-tooltip-score">Peak: ${latestScore.toFixed(1)}%`;
-    if (latestModel) html += ` (${latestModel})`;
+    if (latestModel && labName) html += ` (${latestModel}, ${labName})`;
+    else if (latestModel) html += ` (${latestModel})`;
     if (latestQuarter) html += ` \u2014 ${latestQuarter}`;
     html += `</div>`;
   }
@@ -998,37 +994,59 @@ function buildExportCanvas() {
   ctx.fillStyle = "#0f1117";
   ctx.fillRect(0, 0, totalW, totalH);
 
-  // Draw legend row at top
-  const datasets = chart.data.datasets.filter((_, i) => chart.isDatasetVisible(i));
+  // Draw legend row at top — mirror the on-screen layout (active, then defeated section)
+  const visibleDatasets = chart.data.datasets
+    .map((ds, i) => ({ ds, idx: i }))
+    .filter(({ idx }) => chart.isDatasetVisible(idx));
+  const activeDs = visibleDatasets.filter(({ ds }) => !ds._isInactive);
+  const inactiveDs = visibleDatasets.filter(({ ds }) => ds._isInactive);
+
   const fontSize = 10 * CHART_DPR;
+  const smallFontSize = 8 * CHART_DPR;
   ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
 
   let legendX = pad;
   const legendY = pad + legendH * 0.6;
   const dotR = 4 * CHART_DPR;
   const itemGap = 16 * CHART_DPR;
-
   const maxLegendX = totalW - pad;
-  for (const ds of datasets) {
-    const color = ds._isInactive ? INACTIVE_COLOR : ds.borderColor;
+
+  function drawLegendItem(ds, textColor) {
+    // Use original color if this benchmark is isolated, otherwise grey for inactive
+    const isIsolated = isolatedIndex === chart.data.datasets.indexOf(ds);
+    const color = (ds._isInactive && !isIsolated) ? INACTIVE_COLOR : (BENCHMARK_COLORS[ds._benchKey] || ds.borderColor);
     const labelWidth = ctx.measureText(ds.label).width;
     const itemWidth = dotR * 2 + 4 * CHART_DPR + labelWidth + itemGap;
+    if (legendX + itemWidth > maxLegendX) return;
 
-    // Stop if this item would overflow the canvas
-    if (legendX + itemWidth > maxLegendX) break;
-
-    // Dot
     ctx.beginPath();
     ctx.arc(legendX + dotR, legendY, dotR, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.fill();
     legendX += dotR * 2 + 4 * CHART_DPR;
 
-    // Label
-    ctx.fillStyle = ds._isInactive ? "#6b7280" : "#9aa0a6";
+    ctx.fillStyle = textColor;
     ctx.textAlign = "left";
     ctx.fillText(ds.label, legendX, legendY + fontSize * 0.35);
     legendX += labelWidth + itemGap;
+  }
+
+  // Active items
+  for (const { ds } of activeDs) drawLegendItem(ds, "#9aa0a6");
+
+  // Defeated section (frontier mode only)
+  if (inactiveDs.length > 0 && currentMode === "frontier") {
+    const sectionLabel = "~DEFEATED";
+    ctx.font = `bold ${smallFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    const sectionWidth = ctx.measureText(sectionLabel).width + itemGap;
+    if (legendX + sectionWidth <= maxLegendX) {
+      ctx.fillStyle = "#5f6368";
+      ctx.textAlign = "left";
+      ctx.fillText(sectionLabel, legendX, legendY + smallFontSize * 0.35);
+      legendX += sectionWidth;
+    }
+    ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    for (const { ds } of inactiveDs) drawLegendItem(ds, "#6b7280");
   }
 
   // Chart image
@@ -1323,11 +1341,23 @@ document.addEventListener("DOMContentLoaded", () => {
       // Pre-compute statistics for structured analysis
       const frontierGrowth = computeFrontierGrowth(startIdx, endIdx);
       const rankings = computeRankings(startIdx, endIdx);
+      const filterEnd = getFilterEndDate();
+      const activeBenchKeys = Object.keys(BENCHMARKS).filter(k => isBenchmarkActive(k, filterEnd));
+      const labCoverage = {};
+      for (const [labKey, lab] of Object.entries(LABS)) {
+        let has = 0;
+        for (const bk of activeBenchKeys) {
+          const latest = getLatestScore(BENCHMARKS[bk].scores[labKey], endIdx);
+          if (latest) has++;
+        }
+        labCoverage[lab.name] = `${has}/${activeBenchKeys.length} active benchmarks`;
+      }
       const stats = {
         frontierGrowth,
         leader: rankings.leader,
         biggestLoser: rankings.biggestLoser,
         activeBenchmarkCount: frontierGrowth.benchmarks.length,
+        labDataCoverage: labCoverage,
       };
       const costData = computeCostDecline(startIdx, endIdx);
 

@@ -211,6 +211,16 @@ main {
   user-select: none;
 }
 
+.legend-info-icon {
+  font-size: 0.6rem;
+  opacity: 0.4;
+  margin-left: 0.1rem;
+}
+
+.legend-item.inactive:hover .legend-info-icon {
+  opacity: 0.8;
+}
+
 .legend-item.inactive {
   opacity: 0.55;
   font-size: 0.7rem;

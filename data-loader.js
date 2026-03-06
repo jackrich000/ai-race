@@ -32,7 +32,7 @@ const LABS = {
 };
 
 // Benchmark metadata — descriptions, categories, links, lifecycle status
-// Order matters: active benchmarks first, then inactive (controls legend rendering)
+// Active benchmarks first, then inactive (grouped for readability)
 const BENCHMARK_META = {
   // ─── Active benchmarks ───
   "gpqa": {
@@ -87,16 +87,16 @@ const BENCHMARK_META = {
     link: "https://arcprize.org/",
     status: "deprecated",
     activeUntil: "Q1 2025",
-    inactiveReason: "Replaced by ARC-AGI-2; all labs switched to AGI-2 in Q4 2025 model cards",
+    inactiveReason: "Replaced by ARC-AGI-2, with first submissions in Q1 2025",
   },
   "swe-bench": {
     name: "SWE-bench Verified",
     description: "Real GitHub issues from popular open-source Python repositories \u2014 models must generate working patches. Scores sourced from the official SWE-bench Verified leaderboard. Since every submission pairs a scaffold/agent with a model, we attribute scores to the underlying model\u2019s lab. Entries using models from multiple labs are excluded.",
     category: "Coding",
     link: "https://www.swebench.com/",
-    status: "deprecated",
-    activeUntil: "Q1 2026",
-    inactiveReason: "Officially deprecated by OpenAI in Feb 2026; replaced by SWE-bench Pro",
+    status: "saturated",
+    activeUntil: "Q3 2025",
+    inactiveReason: "Scores plateaued Q3 2025 due to known question-set ceiling; officially deprecated Feb 2026",
   },
 };
 
