@@ -15,7 +15,7 @@ Follow this template exactly. Fill in the [placeholders] using the stats JSON an
 
 ### AI Frontier
 
-Frontier scores on active benchmarks grew by an average of [avgGrowthPct]%. The biggest increase came in [biggest mover benchmark name] — [one-line plain-English description of what that benchmark measures] — which jumped [growthPct]% from [startScore] to [endScore], driven by [model name from raw data].
+Frontier scores on leading, active benchmarks grew by an average of [avgGrowthPct]%. The biggest increase came in [biggest mover benchmark name] — [one-line plain-English description of what that benchmark measures]. It jumped [growthPct]% from [startScore] to [endScore], driven by [model name from raw data].
 
 [INCLUDE ONLY IF stats.defeatedThisPeriod is non-empty:]
 [Benchmark name(s)] was/were effectively defeated this period — [reason from defeatedThisPeriod data, e.g. "scores converged at 97%+ across all labs" or "replaced by harder successor"].
@@ -31,7 +31,8 @@ Frontier scores on active benchmarks grew by an average of [avgGrowthPct]%. The 
 ### Cost of Intelligence
 
 [FOR EACH cost benchmark where cheaperMultiple represents a >= 10% decline:]
-It became [Xx cheaper / X% cheaper] to match [threshold description] on [benchmark name] — down from $[startPrice] to $[endPrice] per million tokens.
+It became [Xx cheaper] to match [threshold description] on [benchmark name] — down from $[startPrice] to $[endPrice] per million tokens.
+Use "Xx cheaper" when cheaperMultiple >= 2. For cheaperMultiple < 2, express as a percentage drop instead (e.g. "costs fell 30%").
 
 [OMIT this entire section if no cost benchmark showed a meaningful decline (>= 10%).]
 
@@ -39,7 +40,7 @@ It became [Xx cheaper / X% cheaper] to match [threshold description] on [benchma
 
 - [Intelligence gains + cost decline, with numbers]
 - [Lab race shift, with names]
-- [Strongest signal in the data — short, sharp, plain English]
+- The single strongest signal in the data — short, sharp, plain English. No consultancy gloss, no jargon, no sensationalism.
 
 === RULES ===
 - Tone: straightforward, no-bullshit. No corporate filler, no hedging ("it's worth noting", "interestingly"), no throat-clearing.
