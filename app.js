@@ -1361,12 +1361,26 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         labCoverage[lab.name] = `${has}/${activeBenchKeys.length} active benchmarks`;
       }
+      // Benchmarks defeated (saturated/deprecated) during the selected range
+      const defeatedThisPeriod = [];
+      for (const [benchKey, meta] of Object.entries(BENCHMARK_META)) {
+        if (!meta.activeUntil) continue;
+        if (compareQuarters(meta.activeUntil, startQ) >= 0 && compareQuarters(meta.activeUntil, endQ) <= 0) {
+          defeatedThisPeriod.push({
+            name: meta.name,
+            status: meta.status,
+            activeUntil: meta.activeUntil,
+            reason: meta.inactiveReason,
+          });
+        }
+      }
       const stats = {
         frontierGrowth,
         leader: rankings.leader,
         biggestLoser: rankings.biggestLoser,
         activeBenchmarkCount: frontierGrowth.benchmarks.length,
         labDataCoverage: labCoverage,
+        defeatedThisPeriod,
       };
       const costData = computeCostDecline(startIdx, endIdx);
 
