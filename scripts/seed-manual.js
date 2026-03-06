@@ -64,20 +64,15 @@ const SWEBENCH_PRO_RAW = [
   { lab: "anthropic", quarter: "Q4 2025", score: 45.9, model: "Claude Opus 4.5", verified: true },
   { lab: "google", quarter: "Q4 2025", score: 43.3, model: "Gemini 3 Pro", verified: true },
   { lab: "openai", quarter: "Q4 2025", score: 41.8, model: "GPT-5", verified: true },
+  // GPT-5.4 model card (https://openai.com/index/introducing-gpt-5-4/, March 5 2026)
+  { lab: "openai", quarter: "Q1 2026", score: 57.7, model: "GPT-5.4", verified: false, source: "model_card" },
 ];
-
-/** Verified data always beats unverified; within the same tier, higher score wins. */
-function shouldReplace(current, candidate) {
-  if (!current) return true;
-  if (candidate.verified && !current.verified) return true;
-  if (!candidate.verified && current.verified) return false;
-  return candidate.score > current.score;
-}
 
 /**
  * Convert raw data points into cumulative-best rows per (lab, quarter).
  * Produces a row for every quarter where the lab has any data (running max).
- * Verified scores take precedence over unverified ones.
+ * Within each quarter, verified scores take precedence over unverified.
+ * Across quarters, highest score wins regardless of verified status.
  */
 function computeCumulativeBestRows(rawData, benchmarkKey, startQuarter) {
   const rows = [];
@@ -92,12 +87,11 @@ function computeCumulativeBestRows(rawData, benchmarkKey, startQuarter) {
     for (let qi = startIdx; qi < QUARTERS.length; qi++) {
       const quarter = QUARTERS[qi];
 
-      // Check if there's a new data point this quarter
-      for (const dp of labPoints) {
-        if (dp.quarter === quarter) {
-          if (shouldReplace(best, dp)) {
-            best = { score: dp.score, model: dp.model, verified: dp.verified !== false };
-          }
+      // Collect data points for this quarter — all compete on score
+      const quarterPoints = labPoints.filter(dp => dp.quarter === quarter);
+      for (const dp of quarterPoints) {
+        if (!best || dp.score > best.score) {
+          best = { score: dp.score, model: dp.model, verified: dp.verified !== false, source: dp.source || "manual" };
         }
       }
 
@@ -108,7 +102,7 @@ function computeCumulativeBestRows(rawData, benchmarkKey, startQuarter) {
         quarter,
         score: best ? best.score : null,
         model: best ? best.model : null,
-        source: "manual",
+        source: best ? best.source : "manual",
         verified: best ? best.verified : true,
       });
     }

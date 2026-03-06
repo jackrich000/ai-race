@@ -564,9 +564,8 @@ function renderChart() {
           line += ` (${model})`;
         }
         const isVerified = context.dataset._verified?.[context.dataIndex] !== false;
-        const source = context.dataset._sources?.[context.dataIndex];
-        if (!isVerified && source) {
-          return [line, `  Unverified \u2014 ${formatSourceName(source)}`];
+        if (!isVerified) {
+          line += `  !! Unverified !!`;
         }
         return line;
       };

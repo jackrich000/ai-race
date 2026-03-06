@@ -126,7 +126,34 @@ const EPOCH_BENCHMARK_FILES = {
 // Hardcoded here so the scoped DELETE doesn't wipe it on re-run.
 // Each entry: { benchmark, lab, model, score, date, source, verified }
 const MODEL_CARD_DATA = [
-  // Populated with real model card scores during testing
+  // GPT-5.4 (https://openai.com/index/introducing-gpt-5-4/, March 5 2026)
+  { benchmark: "hle", lab: "openai", model: "GPT-5.4 Pro (with tools)", score: 58.7, date: new Date("2026-03-05"), source: "model_card", verified: false, matchVerified: /gpt.?5.?4/i },
+  { benchmark: "gpqa", lab: "openai", model: "GPT-5.4 Pro", score: 94.4, date: new Date("2026-03-05"), source: "model_card", verified: false, matchVerified: /gpt.?5.?4/i },
+  { benchmark: "arc-agi-2", lab: "openai", model: "GPT-5.4 Pro", score: 83.3, date: new Date("2026-03-05"), source: "model_card", verified: false, matchVerified: /gpt.?5.?4/i },
+  { benchmark: "arc-agi-1", lab: "openai", model: "GPT-5.4 Pro", score: 94.5, date: new Date("2026-03-05"), source: "model_card", verified: false, matchVerified: /gpt.?5.?4/i },
+
+  // Claude Sonnet 4.6 (https://www.anthropic.com/claude/sonnet, Feb 17 2026)
+  { benchmark: "gpqa", lab: "anthropic", model: "Claude Sonnet 4.6", score: 89.9, date: new Date("2026-02-17"), source: "model_card", verified: false, matchVerified: /sonnet.?4[\.\s-]?6/i },
+  { benchmark: "swe-bench", lab: "anthropic", model: "Claude Sonnet 4.6", score: 79.6, date: new Date("2026-02-17"), source: "model_card", verified: false, matchVerified: /sonnet.?4[\.\s-]?6/i },
+  { benchmark: "arc-agi-2", lab: "anthropic", model: "Claude Sonnet 4.6", score: 58.3, date: new Date("2026-02-17"), source: "model_card", verified: false, matchVerified: /sonnet.?4[\.\s-]?6/i },
+  { benchmark: "hle", lab: "anthropic", model: "Claude Sonnet 4.6 (with tools)", score: 49.0, date: new Date("2026-02-17"), source: "model_card", verified: false, matchVerified: /sonnet.?4[\.\s-]?6/i },
+
+  // Claude Opus 4.6 (https://www.anthropic.com/news/claude-opus-4-6, March 2026)
+  { benchmark: "gpqa", lab: "anthropic", model: "Claude Opus 4.6", score: 91.3, date: new Date("2026-03-01"), source: "model_card", verified: false, matchVerified: /opus.?4[\.\s-]?6/i },
+  { benchmark: "swe-bench", lab: "anthropic", model: "Claude Opus 4.6", score: 80.8, date: new Date("2026-03-01"), source: "model_card", verified: false, matchVerified: /opus.?4[\.\s-]?6/i },
+  { benchmark: "hle", lab: "anthropic", model: "Claude Opus 4.6 (with tools)", score: 53.0, date: new Date("2026-03-01"), source: "model_card", verified: false, matchVerified: /opus.?4[\.\s-]?6/i },
+  { benchmark: "arc-agi-2", lab: "anthropic", model: "Claude Opus 4.6", score: 68.8, date: new Date("2026-03-01"), source: "model_card", verified: false, matchVerified: /opus.?4[\.\s-]?6/i },
+
+  // Gemini 3 Deep Think (https://blog.google/.../gemini-3-deep-think/, Feb 12 2026)
+  { benchmark: "hle", lab: "google", model: "Gemini 3 Deep Think (with tools)", score: 53.4, date: new Date("2026-02-12"), source: "model_card", verified: false, matchVerified: /deep.?think/i },
+  { benchmark: "hle", lab: "google", model: "Gemini 3 Deep Think", score: 48.4, date: new Date("2026-02-12"), source: "model_card", verified: false, matchVerified: /deep.?think/i },
+  { benchmark: "arc-agi-2", lab: "google", model: "Gemini 3 Deep Think", score: 84.6, date: new Date("2026-02-12"), source: "model_card", verified: false, matchVerified: /deep.?think/i },
+
+  // Gemini 3.1 Pro (https://blog.google/.../gemini-3-1-pro/, Feb 19 2026)
+  { benchmark: "gpqa", lab: "google", model: "Gemini 3.1 Pro", score: 94.3, date: new Date("2026-02-19"), source: "model_card", verified: false, matchVerified: /gemini.?3[\.\s-]?1.?pro/i },
+  { benchmark: "hle", lab: "google", model: "Gemini 3.1 Pro (with tools)", score: 51.4, date: new Date("2026-02-19"), source: "model_card", verified: false, matchVerified: /gemini.?3[\.\s-]?1.?pro/i },
+  { benchmark: "hle", lab: "google", model: "Gemini 3.1 Pro", score: 44.4, date: new Date("2026-02-19"), source: "model_card", verified: false, matchVerified: /gemini.?3[\.\s-]?1.?pro/i },
+  { benchmark: "arc-agi-2", lab: "google", model: "Gemini 3.1 Pro", score: 77.1, date: new Date("2026-02-19"), source: "model_card", verified: false, matchVerified: /gemini.?3[\.\s-]?1.?pro/i },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -183,23 +210,42 @@ function modelNameToLab(modelName) {
   return null;
 }
 
-/** Verified data always beats unverified; within the same tier, higher score wins. */
-function shouldReplace(current, candidate) {
-  if (!current) return true;
-  if (candidate.verified && !current.verified) return true;
-  if (!candidate.verified && current.verified) return false;
-  return candidate.score > current.score;
+/**
+ * Drop model card entries where a verified source has tested the same model.
+ * Each model card entry has a `matchVerified` regex; if any verified data point
+ * for the same (benchmark, lab) matches it, the model card entry is dropped.
+ */
+function filterVerifiedDuplicates(allPoints) {
+  const verifiedPoints = allPoints.filter(p => p.verified !== false);
+
+  return allPoints.filter(p => {
+    if (p.source !== "model_card" || !p.matchVerified) return true;
+
+    const hasVerifiedMatch = verifiedPoints.some(vp =>
+      vp.benchmark === p.benchmark &&
+      vp.lab === p.lab &&
+      p.matchVerified.test(vp.model)
+    );
+
+    if (hasVerifiedMatch) {
+      console.log(`   [Filter] Dropping model card "${p.model}" on ${p.benchmark} — verified source covers this model`);
+    }
+
+    return !hasVerifiedMatch;
+  });
 }
 
 /**
  * Compute cumulative best score per quarter, tracking which model achieved it.
- * Verified scores take precedence over unverified ones.
+ * All data points compete on score — highest wins.
+ * The verified status travels with the winning data point.
  * @param {Array<{date: Date, score: number, model: string, source: string, verified: boolean}>} dataPoints
  * @param {string[]} quarters
  * @returns {Object<string, {score: number, model: string, source: string, verified: boolean}|null>}
  */
 function computeCumulativeBest(dataPoints, quarters) {
-  dataPoints.sort((a, b) => a.date - b.date);
+  const filtered = [...dataPoints];
+  filtered.sort((a, b) => a.date - b.date);
 
   const result = {};
   let best = null;
@@ -208,9 +254,9 @@ function computeCumulativeBest(dataPoints, quarters) {
   for (const quarter of quarters) {
     const end = quarterEndDate(quarter);
 
-    while (dpIndex < dataPoints.length && dataPoints[dpIndex].date <= end) {
-      const dp = dataPoints[dpIndex];
-      if (shouldReplace(best, dp)) {
+    while (dpIndex < filtered.length && filtered[dpIndex].date <= end) {
+      const dp = filtered[dpIndex];
+      if (!best || dp.score > best.score) {
         best = { score: dp.score, model: dp.model, source: dp.source, verified: dp.verified !== false };
       }
       dpIndex++;
@@ -812,26 +858,20 @@ async function main() {
     fetchCostData().catch(err => { console.error("   [Cost] FAILED:", err.message); return []; }),
   ]);
 
-  // Merge all data points by benchmark
+  // Merge all data points, filter model card duplicates, then group by benchmark
   console.log("\n2. Merging data and computing cumulative best...");
-  const byBenchmark = {}; // { benchKey: { labKey: [dataPoints] } }
+  const allMerged = [...aaData, ...sweData, ...arcData, ...epochData, ...MODEL_CARD_DATA];
+  const allFiltered = filterVerifiedDuplicates(allMerged);
 
-  function addPoints(points) {
-    for (const p of points) {
-      if (!byBenchmark[p.benchmark]) byBenchmark[p.benchmark] = {};
-      if (!byBenchmark[p.benchmark][p.lab]) byBenchmark[p.benchmark][p.lab] = [];
-      byBenchmark[p.benchmark][p.lab].push(p);
-    }
+  const byBenchmark = {}; // { benchKey: { labKey: [dataPoints] } }
+  for (const p of allFiltered) {
+    if (!byBenchmark[p.benchmark]) byBenchmark[p.benchmark] = {};
+    if (!byBenchmark[p.benchmark][p.lab]) byBenchmark[p.benchmark][p.lab] = [];
+    byBenchmark[p.benchmark][p.lab].push(p);
   }
 
-  addPoints(aaData);    // HLE, GPQA
-  addPoints(sweData);   // SWE-bench
-  addPoints(arcData);   // ARC-AGI-1, ARC-AGI-2
-  addPoints(epochData); // AIME, ARC-AGI-1, ARC-AGI-2, SWE-bench (historical)
-  addPoints(MODEL_CARD_DATA); // Model card (self-reported, unverified)
-
-  // Write raw observations to benchmark_raw (audit trail)
-  const allRawPoints = [...aaData, ...sweData, ...arcData, ...epochData, ...MODEL_CARD_DATA];
+  // Write raw observations to benchmark_raw (audit trail — includes all points, even filtered ones)
+  const allRawPoints = allMerged;
   if (allRawPoints.length > 0) {
     console.log(`   Writing ${allRawPoints.length} raw observations to benchmark_raw...`);
     const rawRows = allRawPoints.map(p => ({
