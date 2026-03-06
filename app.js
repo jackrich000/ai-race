@@ -1,3 +1,8 @@
+// ─── Utilities ──────────────────────────────────────────────
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 // ─── Constants ───────────────────────────────────────────────
 const CHART_DPR = 3;
 const INACTIVE_COLOR = "#4b5563";       // grey-600
@@ -784,14 +789,18 @@ function showInactiveTooltip(ds, clientX, clientY) {
 
   const labName = latestLab ? (LABS[latestLab]?.name || latestLab) : null;
 
-  let html = `<div class="inactive-tooltip-name">${ds.label} <span class="status-badge ${statusClass}">${statusLabel} ${meta.activeUntil}</span></div>`;
+  const safeName = escapeHtml(ds.label);
+  const safeModel = latestModel ? escapeHtml(latestModel) : null;
+  const safeLabName = labName ? escapeHtml(labName) : null;
+
+  let html = `<div class="inactive-tooltip-name">${safeName} <span class="status-badge ${statusClass}">${statusLabel} ${meta.activeUntil}</span></div>`;
   if (meta.inactiveReason) {
-    html += `<div class="inactive-tooltip-reason">${meta.inactiveReason}</div>`;
+    html += `<div class="inactive-tooltip-reason">${escapeHtml(meta.inactiveReason)}</div>`;
   }
   if (latestScore !== null) {
     html += `<div class="inactive-tooltip-score">Peak: ${latestScore.toFixed(1)}%`;
-    if (latestModel && labName) html += ` (${latestModel}, ${labName})`;
-    else if (latestModel) html += ` (${latestModel})`;
+    if (safeModel && safeLabName) html += ` (${safeModel}, ${safeLabName})`;
+    else if (safeModel) html += ` (${safeModel})`;
     if (latestQuarter) html += ` \u2014 ${latestQuarter}`;
     html += `</div>`;
   }
@@ -1397,10 +1406,6 @@ document.addEventListener("DOMContentLoaded", () => {
         copyBtn.textContent = "Copied!";
         setTimeout(() => { copyBtn.textContent = "Copy to clipboard"; }, 2000);
       });
-    }
-
-    function escapeHtml(str) {
-      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
 
     function renderMarkdown(md) {
