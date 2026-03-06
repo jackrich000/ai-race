@@ -20,7 +20,7 @@ Minimum viable launch. Organized into waves for parallel execution.
 
 - [x] **Review recent PRs (benchmark lifecycle + LLM analysis)** — Detailed review of PRs #11 and #12. Three focus areas: (1) Review LLM analysis prompt and output quality in detail, (2) Think through deprecation/saturation logic and how it's labelled in the UI, (3) Retest copy-to-clipboard and image export to verify they work correctly after the benchmark lifecycle changes.
 - [ ] **Unified date filter** *(single worktree)* — Single date filter controls both chart view and AI analysis. Remove the "generate analysis" button entirely. Chart updates and analysis auto-generates for selected period. **Also:** add rate limiting + response caching on `/api/analyze`; redesign analysis panel — copy icon (not text button, match chart style with green flash), headlines-first layout with individual copy buttons per headline.
-- [ ] **Error / loading states** — Handle Supabase slowness or API failures gracefully. A blank chart or crash kills trust.
+- [x] **Error / loading states** — Handle Supabase slowness or API failures gracefully. A blank chart or crash kills trust.
 
 ### Wave 3 — Data completeness
 
