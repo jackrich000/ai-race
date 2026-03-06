@@ -73,8 +73,8 @@ function showLoading(show) {
   if (show && !existing) {
     const el = document.createElement("div");
     el.id = "loadingIndicator";
-    el.style.cssText = "display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-secondary);font-size:0.95rem;";
-    el.textContent = "Loading benchmark data\u2026";
+    el.className = "chart-status";
+    el.innerHTML = '<div class="spinner"></div>Loading benchmark data\u2026';
     container.appendChild(el);
   } else if (!show && existing) {
     existing.remove();
@@ -82,8 +82,8 @@ function showLoading(show) {
 }
 
 function showError(message) {
-  document.querySelector(".chart-container").innerHTML =
-    `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#ef4444;font-size:0.95rem;text-align:center;padding:2rem;">${message}</div>`;
+  const container = document.querySelector(".chart-container");
+  container.innerHTML = `<div class="chart-status error">${escapeHtml(message)}<button class="retry-btn" onclick="location.reload()">Try again</button></div>`;
 }
 
 // ─── Filter pills (benchmark tabs OR lab tabs) ──────────────
@@ -433,10 +433,43 @@ const inactivityMarkerPlugin = {
 
 Chart.register(inactivityMarkerPlugin);
 
+function showChartMessage(message) {
+  let overlay = document.getElementById("chartMessage");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "chartMessage";
+    overlay.className = "chart-status chart-overlay";
+    document.querySelector(".chart-canvas-wrapper").appendChild(overlay);
+  }
+  overlay.textContent = message;
+}
+
+function clearChartMessage() {
+  const el = document.getElementById("chartMessage");
+  if (el) el.remove();
+}
+
 function renderChart() {
+  clearChartMessage();
   const ctx = document.getElementById("benchmarkChart").getContext("2d");
   const isCost = currentMode === "cost";
   chartMode = currentMode;
+
+  // Cost data failed to load — show message instead of chart
+  if (isCost && costLoadFailed) {
+    chart = new Chart(ctx, {
+      type: "line",
+      data: { labels: [], datasets: [] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        devicePixelRatio: CHART_DPR,
+      },
+    });
+    showChartMessage("Cost data is temporarily unavailable. Please try again later.");
+    return;
+  }
 
   const yScale = isCost
     ? {
@@ -537,6 +570,12 @@ function renderChart() {
       devicePixelRatio: CHART_DPR,
     },
   });
+
+  // Empty state: check if all data points are null
+  const hasData = chart.data.datasets.some(ds => ds.data.some(v => v !== null));
+  if (!hasData) {
+    showChartMessage("No data available for this view.");
+  }
 }
 
 // ─── Custom HTML Legend ──────────────────────────────────────
@@ -830,6 +869,7 @@ function updateChart() {
   isolatedIndex = null;
   highlightedInactiveIndex = null;
   hideInactiveTooltip();
+  clearChartMessage();
 
   // If switching between cost and non-cost, destroy and recreate (scale type changes)
   const needsCost = currentMode === "cost";
@@ -845,6 +885,12 @@ function updateChart() {
   chart.data.datasets.forEach((_, i) => chart.setDatasetVisibility(i, true));
   chart.update();
   renderCustomLegend();
+
+  // Check empty state after update
+  const hasData = chart.data.datasets.some(ds => ds.data.some(v => v !== null));
+  if (!hasData) {
+    showChartMessage("No data available for this view.");
+  }
 }
 
 // ─── Info area ───────────────────────────────────────────────
