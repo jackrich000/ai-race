@@ -122,6 +122,13 @@ const EPOCH_BENCHMARK_FILES = {
   "swe_bench_verified.csv":       { key: "swe-bench",  scoreCol: "mean_score" },
 };
 
+// ─── Source 6: Model card data (self-reported, unverified) ────
+// Hardcoded here so the scoped DELETE doesn't wipe it on re-run.
+// Each entry: { benchmark, lab, model, score, date, source, verified }
+const MODEL_CARD_DATA = [
+  // Populated with real model card scores during testing
+];
+
 // ─── Helpers ─────────────────────────────────────────────────
 
 /** Compare quarter strings like "Q1 2023" numerically. Returns negative/zero/positive. */
@@ -176,11 +183,20 @@ function modelNameToLab(modelName) {
   return null;
 }
 
+/** Verified data always beats unverified; within the same tier, higher score wins. */
+function shouldReplace(current, candidate) {
+  if (!current) return true;
+  if (candidate.verified && !current.verified) return true;
+  if (!candidate.verified && current.verified) return false;
+  return candidate.score > current.score;
+}
+
 /**
  * Compute cumulative best score per quarter, tracking which model achieved it.
- * @param {Array<{date: Date, score: number, model: string, source: string}>} dataPoints
+ * Verified scores take precedence over unverified ones.
+ * @param {Array<{date: Date, score: number, model: string, source: string, verified: boolean}>} dataPoints
  * @param {string[]} quarters
- * @returns {Object<string, {score: number, model: string, source: string}|null>}
+ * @returns {Object<string, {score: number, model: string, source: string, verified: boolean}|null>}
  */
 function computeCumulativeBest(dataPoints, quarters) {
   dataPoints.sort((a, b) => a.date - b.date);
@@ -194,8 +210,8 @@ function computeCumulativeBest(dataPoints, quarters) {
 
     while (dpIndex < dataPoints.length && dataPoints[dpIndex].date <= end) {
       const dp = dataPoints[dpIndex];
-      if (best === null || dp.score > best.score) {
-        best = { score: dp.score, model: dp.model, source: dp.source };
+      if (shouldReplace(best, dp)) {
+        best = { score: dp.score, model: dp.model, source: dp.source, verified: dp.verified !== false };
       }
       dpIndex++;
     }
@@ -342,6 +358,7 @@ async function fetchArtificialAnalysis() {
         score: evals.hle * 100,
         date: releaseDate,
         source: "artificialanalysis",
+        verified: true,
       });
     }
 
@@ -354,6 +371,7 @@ async function fetchArtificialAnalysis() {
         score: evals.gpqa * 100,
         date: releaseDate,
         source: "artificialanalysis",
+        verified: true,
       });
     }
   }
@@ -439,6 +457,7 @@ async function fetchSWEBench() {
       score,
       date,
       source: "swebench",
+      verified: true,
     });
   }
 
@@ -488,6 +507,7 @@ async function fetchARCPrize() {
       score: score * 100, // 0-1 → percentage
       date,
       source: "arcprize",
+      verified: true,
     });
   }
 
@@ -567,6 +587,7 @@ async function fetchEpoch() {
         score,
         date,
         source: "epoch",
+        verified: true,
       });
       count++;
     }
@@ -736,18 +757,31 @@ function findCol(headers, preferred, candidates) {
 
 async function main() {
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  const BATCH_SIZE = 500;
 
-  // Pre-flight: check that model/source columns exist
+  // Pre-flight: check that model/source/verified columns exist
   console.log("0. Checking Supabase schema...");
   const { error: schemaErr } = await supabase
     .from("benchmark_scores")
-    .select("model,source")
+    .select("model,source,verified")
     .limit(1);
 
   if (schemaErr && schemaErr.message.includes("column")) {
     console.error("\n   Schema migration needed! Run in the Supabase SQL editor:");
     console.error("     ALTER TABLE benchmark_scores ADD COLUMN model TEXT;");
     console.error("     ALTER TABLE benchmark_scores ADD COLUMN source TEXT;");
+    console.error("     ALTER TABLE benchmark_scores ADD COLUMN verified BOOLEAN DEFAULT true;");
+    process.exit(1);
+  }
+
+  // Check benchmark_raw table exists
+  const { error: rawSchemaErr } = await supabase
+    .from("benchmark_raw")
+    .select("benchmark")
+    .limit(1);
+
+  if (rawSchemaErr) {
+    console.error("\n   benchmark_raw table not found! Run the schema SQL in the Supabase SQL editor.");
     process.exit(1);
   }
 
@@ -794,6 +828,34 @@ async function main() {
   addPoints(sweData);   // SWE-bench
   addPoints(arcData);   // ARC-AGI-1, ARC-AGI-2
   addPoints(epochData); // AIME, ARC-AGI-1, ARC-AGI-2, SWE-bench (historical)
+  addPoints(MODEL_CARD_DATA); // Model card (self-reported, unverified)
+
+  // Write raw observations to benchmark_raw (audit trail)
+  const allRawPoints = [...aaData, ...sweData, ...arcData, ...epochData, ...MODEL_CARD_DATA];
+  if (allRawPoints.length > 0) {
+    console.log(`   Writing ${allRawPoints.length} raw observations to benchmark_raw...`);
+    const rawRows = allRawPoints.map(p => ({
+      benchmark: p.benchmark,
+      lab: p.lab,
+      model: p.model,
+      score: Math.round(p.score * 10) / 10,
+      date: p.date.toISOString().split("T")[0],
+      source: p.source,
+      verified: p.verified !== false,
+    }));
+
+    for (let i = 0; i < rawRows.length; i += BATCH_SIZE) {
+      const batch = rawRows.slice(i, i + BATCH_SIZE);
+      const { error } = await supabase
+        .from("benchmark_raw")
+        .upsert(batch, { onConflict: "benchmark,lab,model,source" });
+
+      if (error) {
+        console.warn(`   benchmark_raw upsert WARN (batch ${Math.floor(i / BATCH_SIZE) + 1}):`, error.message);
+      }
+    }
+    console.log(`   benchmark_raw: upserted ${rawRows.length} rows.`);
+  }
 
   // Compute cumulative best per (benchmark, lab) and build upsert rows
   const allRows = [];
@@ -814,6 +876,7 @@ async function main() {
           score: best !== null && !tooEarly ? Math.round(best.score * 10) / 10 : null,
           model: best !== null && !tooEarly ? best.model || null : null,
           source: best !== null && !tooEarly ? best.source || null : null,
+          verified: best !== null && !tooEarly ? best.verified : true,
         });
       }
     }
@@ -835,6 +898,7 @@ async function main() {
           score: null,
           model: null,
           source: null,
+          verified: true,
         });
       }
     }
@@ -885,7 +949,6 @@ async function main() {
   console.log(`   Deleted existing rows for automated benchmarks: ${automatedBenchmarks.join(", ")}`);
 
   // Insert in chunks of 500 to stay within Supabase limits
-  const BATCH_SIZE = 500;
   for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
     const batch = allRows.slice(i, i + BATCH_SIZE);
     const { error } = await supabase
