@@ -244,8 +244,7 @@ function filterVerifiedDuplicates(allPoints) {
  * @returns {Object<string, {score: number, model: string, source: string, verified: boolean}|null>}
  */
 function computeCumulativeBest(dataPoints, quarters) {
-  const filtered = [...dataPoints];
-  filtered.sort((a, b) => a.date - b.date);
+  const sorted = [...dataPoints].sort((a, b) => a.date - b.date);
 
   const result = {};
   let best = null;
@@ -254,8 +253,8 @@ function computeCumulativeBest(dataPoints, quarters) {
   for (const quarter of quarters) {
     const end = quarterEndDate(quarter);
 
-    while (dpIndex < filtered.length && filtered[dpIndex].date <= end) {
-      const dp = filtered[dpIndex];
+    while (dpIndex < sorted.length && sorted[dpIndex].date <= end) {
+      const dp = sorted[dpIndex];
       if (!best || dp.score > best.score) {
         best = { score: dp.score, model: dp.model, source: dp.source, verified: dp.verified !== false };
       }

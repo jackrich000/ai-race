@@ -3,18 +3,6 @@ function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function formatSourceName(source) {
-  const names = {
-    artificialanalysis: "Artificial Analysis",
-    epoch: "Epoch AI",
-    swebench: "SWE-bench",
-    arcprize: "ARC Prize",
-    manual: "Curated",
-    model_card: "Model Card (self-reported)",
-  };
-  return names[source] || source || "Unknown";
-}
-
 /** Build per-point style arrays for hollow (unverified) vs solid (verified) dots. */
 function buildPointStyleArrays(verifiedArr, color) {
   return {
@@ -302,14 +290,12 @@ function buildDatasets() {
 
     return Object.entries(LABS).map(([labKey, lab]) => {
       const verifiedArr = bench.scores[labKey].map(d => d ? d.verified : true);
-      const sourcesArr = bench.scores[labKey].map(d => d ? d.source : null);
       const pointStyle = buildPointStyleArrays(verifiedArr, lab.color);
       return {
         label: lab.name,
         data: bench.scores[labKey].map(d => d ? d.score : null),
         _models: bench.scores[labKey].map(d => d ? d.model : null),
         _verified: verifiedArr,
-        _sources: sourcesArr,
         borderColor: lab.color,
         backgroundColor: lab.color + "33",
         borderWidth: 2.5,
@@ -333,7 +319,6 @@ function buildDatasets() {
       const frontierModels = [];
       const frontierLabs = [];
       const frontierVerified = [];
-      const frontierSources = [];
 
       // Find the activeUntil quarter index for truncation
       let activeUntilIdx = TIME_LABELS.length - 1;
@@ -350,7 +335,6 @@ function buildDatasets() {
         let bestModel = null;
         let bestLab = null;
         let bestVerified = true;
-        let bestSource = null;
 
         for (const labKey of labKeys) {
           const entry = benchData.scores[labKey][i];
@@ -359,7 +343,6 @@ function buildDatasets() {
             bestModel = entry.model;
             bestLab = labKey;
             bestVerified = entry.verified !== false;
-            bestSource = entry.source || null;
           }
         }
 
@@ -377,7 +360,6 @@ function buildDatasets() {
             bestModel = null;
             bestLab = null;
             bestVerified = true;
-            bestSource = null;
           }
         }
 
@@ -385,7 +367,6 @@ function buildDatasets() {
         frontierModels.push(bestModel);
         frontierLabs.push(bestLab);
         frontierVerified.push(bestVerified);
-        frontierSources.push(bestSource);
       }
 
       const color = BENCHMARK_COLORS[benchKey];
@@ -397,7 +378,6 @@ function buildDatasets() {
         _models: frontierModels,
         _labs: frontierLabs,
         _verified: frontierVerified,
-        _sources: frontierSources,
         _benchKey: benchKey,
         _isInactive: isInactive,
         _inactiveReason: meta.inactiveReason || null,

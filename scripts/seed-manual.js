@@ -71,8 +71,8 @@ const SWEBENCH_PRO_RAW = [
 /**
  * Convert raw data points into cumulative-best rows per (lab, quarter).
  * Produces a row for every quarter where the lab has any data (running max).
- * Within each quarter, verified scores take precedence over unverified.
- * Across quarters, highest score wins regardless of verified status.
+ * All data points compete on score — highest wins.
+ * The verified status travels with the winning data point.
  */
 function computeCumulativeBestRows(rawData, benchmarkKey, startQuarter) {
   const rows = [];
