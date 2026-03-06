@@ -37,7 +37,8 @@ async function main() {
         r.quarter.padEnd(10) +
         String(r.score).padEnd(8) +
         (r.model || "").padEnd(45) +
-        (r.source || "")
+        (r.source || "").padEnd(22) +
+        (r.verified === false ? "UNVERIFIED" : "")
       );
     }
   }

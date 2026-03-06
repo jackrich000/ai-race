@@ -145,7 +145,7 @@ let COST_DATA = {};
 let costLoadFailed = false;
 
 async function loadBenchmarkScores() {
-  const url = `${SUPABASE_URL}/rest/v1/benchmark_scores?select=benchmark,lab,quarter,score,model&order=benchmark,lab,quarter`;
+  const url = `${SUPABASE_URL}/rest/v1/benchmark_scores?select=benchmark,lab,quarter,score,model,source,verified&order=benchmark,lab,quarter`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -199,7 +199,12 @@ async function loadBenchmarkScores() {
       const qi = quarterIndex[row.quarter];
       if (qi !== undefined && scores[row.lab]) {
         scores[row.lab][qi] = row.score !== null
-          ? { score: Math.round(row.score * 10) / 10, model: row.model || null }
+          ? {
+              score: Math.round(row.score * 10) / 10,
+              model: row.model || null,
+              source: row.source || null,
+              verified: row.verified !== false,
+            }
           : null;
       }
     }

@@ -3,6 +3,15 @@ function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+/** Build per-point style arrays for hollow (unverified) vs solid (verified) dots. */
+function buildPointStyleArrays(verifiedArr, color) {
+  return {
+    pointBackgroundColor: verifiedArr.map(v => v === false ? "transparent" : color),
+    pointBorderColor: verifiedArr.map(() => color),
+    pointBorderWidth: verifiedArr.map(v => v === false ? 2 : 1),
+  };
+}
+
 // ─── Constants ───────────────────────────────────────────────
 const CHART_DPR = 3;
 const INACTIVE_COLOR = "#4b5563";       // grey-600
@@ -292,19 +301,24 @@ function buildDatasets() {
     const bench = BENCHMARKS[currentBenchmark];
     if (!bench) return [];
 
-    return Object.entries(LABS).map(([labKey, lab]) => ({
-      label: lab.name,
-      data: bench.scores[labKey].map(d => d ? d.score : null),
-      _models: bench.scores[labKey].map(d => d ? d.model : null),
-      borderColor: lab.color,
-      backgroundColor: lab.color + "33",
-      borderWidth: 2.5,
-      pointRadius: 4,
-      pointHoverRadius: 6,
-      pointBackgroundColor: lab.color,
-      tension: 0.3,
-      spanGaps: true,
-    }));
+    return Object.entries(LABS).map(([labKey, lab]) => {
+      const verifiedArr = bench.scores[labKey].map(d => d ? d.verified : true);
+      const pointStyle = buildPointStyleArrays(verifiedArr, lab.color);
+      return {
+        label: lab.name,
+        data: bench.scores[labKey].map(d => d ? d.score : null),
+        _models: bench.scores[labKey].map(d => d ? d.model : null),
+        _verified: verifiedArr,
+        borderColor: lab.color,
+        backgroundColor: lab.color + "33",
+        borderWidth: 2.5,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        ...pointStyle,
+        tension: 0.3,
+        spanGaps: true,
+      };
+    });
   } else {
     // Frontier: one line per benchmark
     const labKeys = selectedLab ? [selectedLab] : Object.keys(LABS);
@@ -317,6 +331,7 @@ function buildDatasets() {
       const frontierData = [];
       const frontierModels = [];
       const frontierLabs = [];
+      const frontierVerified = [];
 
       // Find the activeUntil quarter index for truncation
       let activeUntilIdx = TIME_LABELS.length - 1;
@@ -332,6 +347,7 @@ function buildDatasets() {
         let bestScore = null;
         let bestModel = null;
         let bestLab = null;
+        let bestVerified = true;
 
         for (const labKey of labKeys) {
           const entry = benchData.scores[labKey][i];
@@ -339,6 +355,7 @@ function buildDatasets() {
             bestScore = entry.score;
             bestModel = entry.model;
             bestLab = labKey;
+            bestVerified = entry.verified !== false;
           }
         }
 
@@ -355,30 +372,35 @@ function buildDatasets() {
             bestScore = null;
             bestModel = null;
             bestLab = null;
+            bestVerified = true;
           }
         }
 
         frontierData.push(bestScore);
         frontierModels.push(bestModel);
         frontierLabs.push(bestLab);
+        frontierVerified.push(bestVerified);
       }
 
       const color = BENCHMARK_COLORS[benchKey];
+      const baseColor = isInactive ? INACTIVE_COLOR : color;
+      const pointStyle = buildPointStyleArrays(frontierVerified, baseColor);
       const ds = {
         label: benchData.name,
         data: frontierData,
         _models: frontierModels,
         _labs: frontierLabs,
+        _verified: frontierVerified,
         _benchKey: benchKey,
         _isInactive: isInactive,
         _inactiveReason: meta.inactiveReason || null,
         _activeUntil: meta.activeUntil || null,
-        borderColor: isInactive ? INACTIVE_COLOR : color,
-        backgroundColor: (isInactive ? INACTIVE_COLOR : color) + "33",
+        borderColor: baseColor,
+        backgroundColor: baseColor + "33",
         borderWidth: isInactive ? INACTIVE_BORDER_WIDTH : 2.5,
         pointRadius: isInactive ? 2 : 4,
         pointHoverRadius: isInactive ? 4 : 6,
-        pointBackgroundColor: isInactive ? INACTIVE_COLOR : color,
+        ...pointStyle,
         pointHoverBackgroundColor: isInactive ? INACTIVE_COLOR : color,
         tension: 0.3,
         spanGaps: true,
@@ -533,6 +555,10 @@ function renderChart() {
           line += ` (${model}, ${labName})`;
         } else if (model) {
           line += ` (${model})`;
+        }
+        const isVerified = context.dataset._verified?.[context.dataIndex] !== false;
+        if (!isVerified) {
+          line += `  !! Unverified !!`;
         }
         return line;
       };
@@ -716,13 +742,22 @@ function applyActiveStyle(ds) {
   const color = BENCHMARK_COLORS[ds._benchKey];
   ds.borderColor = color;
   ds.backgroundColor = color + "33";
-  ds.pointBackgroundColor = color;
   ds.pointHoverBackgroundColor = color;
   ds.pointRadius = 4;
   ds.pointHoverRadius = 6;
   ds.borderWidth = 2.5;
   ds.borderDash = [];
   ds.order = -1;
+
+  // Rebuild per-point arrays if verified data exists
+  if (ds._verified) {
+    const style = buildPointStyleArrays(ds._verified, color);
+    ds.pointBackgroundColor = style.pointBackgroundColor;
+    ds.pointBorderColor = style.pointBorderColor;
+    ds.pointBorderWidth = style.pointBorderWidth;
+  } else {
+    ds.pointBackgroundColor = color;
+  }
 
   // Also update resolved element options for immediate visual effect
   const dsIndex = chart.data.datasets.indexOf(ds);
@@ -733,9 +768,12 @@ function applyActiveStyle(ds) {
       meta.dataset.options.borderWidth = 2.5;
       meta.dataset.options.borderDash = [];
     }
-    meta.data.forEach(pt => {
+    meta.data.forEach((pt, idx) => {
       if (pt && pt.options) {
-        pt.options.backgroundColor = color;
+        const isUnverified = ds._verified && ds._verified[idx] === false;
+        pt.options.backgroundColor = isUnverified ? "transparent" : color;
+        pt.options.borderColor = color;
+        pt.options.borderWidth = isUnverified ? 2 : 1;
         pt.options.hoverBackgroundColor = color;
         pt.options.radius = 4;
         pt.options.hoverRadius = 6;
@@ -747,13 +785,22 @@ function applyActiveStyle(ds) {
 function resetInactiveStyle(ds) {
   ds.borderColor = INACTIVE_COLOR;
   ds.backgroundColor = INACTIVE_COLOR + "33";
-  ds.pointBackgroundColor = INACTIVE_COLOR;
   ds.pointHoverBackgroundColor = INACTIVE_COLOR;
   ds.pointRadius = 2;
   ds.pointHoverRadius = 4;
   ds.borderWidth = INACTIVE_BORDER_WIDTH;
   ds.borderDash = [4, 4];
   ds.order = 1;
+
+  // Rebuild per-point arrays if verified data exists
+  if (ds._verified) {
+    const style = buildPointStyleArrays(ds._verified, INACTIVE_COLOR);
+    ds.pointBackgroundColor = style.pointBackgroundColor;
+    ds.pointBorderColor = style.pointBorderColor;
+    ds.pointBorderWidth = style.pointBorderWidth;
+  } else {
+    ds.pointBackgroundColor = INACTIVE_COLOR;
+  }
 
   // Also update resolved element options
   const dsIndex = chart.data.datasets.indexOf(ds);
@@ -764,9 +811,12 @@ function resetInactiveStyle(ds) {
       meta.dataset.options.borderWidth = INACTIVE_BORDER_WIDTH;
       meta.dataset.options.borderDash = [4, 4];
     }
-    meta.data.forEach(pt => {
+    meta.data.forEach((pt, idx) => {
       if (pt && pt.options) {
-        pt.options.backgroundColor = INACTIVE_COLOR;
+        const isUnverified = ds._verified && ds._verified[idx] === false;
+        pt.options.backgroundColor = isUnverified ? "transparent" : INACTIVE_COLOR;
+        pt.options.borderColor = INACTIVE_COLOR;
+        pt.options.borderWidth = isUnverified ? 2 : 1;
         pt.options.hoverBackgroundColor = INACTIVE_COLOR;
         pt.options.radius = 2;
         pt.options.hoverRadius = 4;
