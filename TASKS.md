@@ -24,11 +24,11 @@ Minimum viable launch. Organized into waves for parallel execution.
 
 ### Wave 3 — Data completeness
 
-- [ ] **Verified/unverified data tier** — Add data model support (source column, verified/unverified flag, multi-row-per-model with preference logic). UI treatment: hollow dots for unverified scores, tooltip tags showing provenance. Chart logic prefers verified, falls back to unverified. Test with a few manual model-card scores on existing benchmarks. This is the foundation for benchmark expansion.
+- [x] **Verified/unverified data tier** — Added `verified` column, `benchmark_raw` audit table, model card ingestion (GPT-5.4, Claude Sonnet/Opus 4.6, Gemini Deep Think/3.1 Pro) with per-entry `matchVerified` regex filtering against verified sources. Hollow dots for unverified, `!! Unverified !!` tooltip. Currently 2 unverified entries survive: HLE Google (Deep Think), SWE-bench Pro OpenAI (GPT-5.4).
 - [ ] **Benchmark expansion** *(requires verified/unverified tier)* — Survey latest frontier model cards (GPT-5.4, Sonnet 4.6, Gemini 3.1 Pro, Grok 3.5, Chinese frontier) for benchmarks appearing on >50% of them. Check for gaps in agentic, browser use, and long-horizon evals (e.g. METR, GDPval). Explore data sources (current APIs + new), review options, decide what to add, implement. Goals: (a) most up-to-date view, (b) diverse range of AI capabilities.
 - [ ] **In-chart citation & source attribution** — Add a citation line inside the chart area (left: `ai-race.vercel.app`, right: source names for current view). Add an info icon with tooltip explaining data sources and methodology. Must also update `buildExportCanvas()` to read from the same source of truth.
   - **Short citation line** (visible in chart area): Left: `ai-race.vercel.app` | Right: dynamic source names per view (e.g. "Source: ARC Prize" or "Source: Artificial Analysis")
-  - **Info tooltip** (on hover/click of an info icon): "Scores are sourced from official benchmark leaderboards (ARC Prize, SWE-bench Verified) and independent evaluation platforms (Artificial Analysis, Epoch AI). Scores may differ slightly from lab-reported model card numbers due to differences in evaluation methodology. Price data is from Artificial Analysis (blended 3:1 input:output per million tokens)." — NB: revisit this text after verified/unverified tier and benchmark expansion are complete; will need to reflect new sources and provenance model.
+  - **Info tooltip** (on hover/click of an info icon): Should explain the verified/unverified distinction. Verified sources: Artificial Analysis (HLE, GPQA), Epoch AI (AIME, ARC-AGI, SWE-bench historical, GPQA cross-ref), ARC Prize (ARC-AGI-1, ARC-AGI-2), SWE-bench leaderboard (SWE-bench Verified), Scale AI SEAL (SWE-bench Pro). Unverified: self-reported model card scores from lab announcements (shown as hollow dots). Explain that verified = independently evaluated, unverified = lab self-reported. Price data from Artificial Analysis (blended 3:1 input:output per million tokens).
 
 ### Wave 4 — Final polish before launch
 
@@ -51,6 +51,7 @@ Deferred — good ideas, not needed for launch.
 - [ ] **Redesign Cost Intelligence tab** — Concept is complicated, current design isn't intuitive enough.
 - [x] **Add older saturated benchmarks** — Implemented as benchmark lifecycle system: 5 active + 3 inactive (HumanEval saturated, ARC-AGI-1 deprecated, SWE-bench Verified deprecated). Grey dashed lines with hover-to-highlight and custom tooltips. Also added SWE-bench Pro as active replacement.
 - [ ] **Set up scheduled data refresh** — Decide frequency (daily vs weekly) based on source update cadence. Automate the ingestion script.
+- [ ] **Automate model card data collection** — Currently MODEL_CARD_DATA is manually curated by reading lab blog posts. Explore browser-use MCP tools (e.g. Playwright MCP, browser-use) to give Claude access to view model card pages and extract benchmark scores directly from official lab announcements. Would eliminate the manual step of reading images/tables and transcribing numbers. Key challenge: scores are often in images/infographics, not structured text.
 
 ---
 
