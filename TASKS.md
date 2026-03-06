@@ -35,6 +35,7 @@ Minimum viable launch. Organized into waves for parallel execution.
 - [ ] **Security audit** — Deep dive all potential security holes and risks before public release. Execute necessary improvements.
 - [ ] **Design, accessibility & responsiveness review** — Not a redesign. High-impact / low-effort pass: contrast, focus states, aria labels, colour-blind friendliness, visual hierarchy, spacing. Also responsiveness: desktop sizing/scaling at 100% zoom, mobile pitfalls (hardcoded px widths, missing overflow handling, media query gaps, font sizing).
 - [ ] **Code cleanliness review & refactor** — Review codebase, refactor where valuable.
+- [ ] **Add contact / author details** — Add links to Jack's Substack and LinkedIn somewhere on the site, so visitors can reach out if it gets traction. Keep it subtle (e.g. footer or small "by" line).
 - [ ] **Write LinkedIn post to announce site**
 
 ---
