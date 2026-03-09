@@ -51,6 +51,8 @@ const BENCHMARK_COLORS = {
   "aime":          "#ef4444",
   "swe-bench-pro": "#34d399",
   "humaneval":     "#6ee7b7",
+  "frontiermath":  "#f472b6",
+  "math-l5":       "#fb7185",
 };
 
 // Colors for cost benchmarks

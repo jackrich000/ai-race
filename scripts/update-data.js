@@ -120,6 +120,8 @@ const EPOCH_BENCHMARK_FILES = {
   "arc_agi_external.csv":         { key: "arc-agi-1",  scoreCol: "Score" },
   "arc_agi_2_external.csv":       { key: "arc-agi-2",  scoreCol: "Score" },
   "swe_bench_verified.csv":       { key: "swe-bench",  scoreCol: "mean_score" },
+  "frontiermath.csv":             { key: "frontiermath", scoreCol: "mean_score" },
+  "math_level_5.csv":             { key: "math-l5",      scoreCol: "mean_score" },
 };
 
 // ─── Source 6: Model card data (self-reported, unverified) ────
@@ -924,7 +926,7 @@ async function main() {
   // Emit null rows for benchmarks with NO data at all (e.g., if a source was down)
   // Benchmarks already in byBenchmark are fully handled by the cumulative-best loop above
   // Automated benchmarks (ingested from sources). Manual seeds (humaneval, swe-bench-pro) are excluded.
-  const automatedBenchmarks = ["swe-bench", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime"];
+  const automatedBenchmarks = ["swe-bench", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime", "frontiermath", "math-l5"];
   const allBenchmarks = automatedBenchmarks;
   for (const benchKey of allBenchmarks) {
     if (byBenchmark[benchKey]) continue; // Already processed above

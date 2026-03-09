@@ -92,6 +92,16 @@ const BENCHMARK_META = {
     activeUntil: "Q3 2025",
     inactiveReason: "Scores plateaued Q3 2025 due to known question-set ceiling; officially deprecated Feb 2026",
   },
+  "frontiermath": {
+    name: "FrontierMath", category: "Math", status: "active",
+    description: "Research-level mathematics problems (Tiers 1–3)",
+  },
+  "math-l5": {
+    name: "MATH Level 5", category: "Math", status: "saturated",
+    description: "The hardest tier of the MATH benchmark",
+    activeUntil: "Q1 2025",
+    inactiveReason: "Top models score 96%+, even the hardest math tier is effectively solved",
+  },
 };
 
 const COST_BENCHMARK_META = {

@@ -70,6 +70,13 @@ const BENCHMARK_META = {
     link: "https://scale.com/leaderboard",
     status: "active",
   },
+  "frontiermath": {
+    name: "FrontierMath",
+    description: "Research-level mathematics problems (Tiers 1–3) created by professional mathematicians. Currently ~25–50% for best models — significantly harder than competition math (AIME). Independently evaluated by Epoch AI.",
+    category: "Math",
+    link: "https://epoch.ai/frontiermath",
+    status: "active",
+  },
   // ─── Inactive benchmarks ───
   "humaneval": {
     name: "HumanEval",
@@ -97,6 +104,15 @@ const BENCHMARK_META = {
     status: "saturated",
     activeUntil: "Q3 2025",
     inactiveReason: "Scores plateaued Q3 2025 due to known question-set ceiling; officially deprecated Feb 2026",
+  },
+  "math-l5": {
+    name: "MATH Level 5",
+    description: "The hardest tier of the MATH benchmark \u2014 olympiad and research-competition problems requiring multi-step reasoning. Scores rose from ~23% to ~98% between 2023 and 2025 as models conquered even the most difficult mathematical problems. Independently evaluated by Epoch AI.",
+    category: "Math",
+    link: "https://arxiv.org/abs/2103.03874",
+    status: "saturated",
+    activeUntil: "Q1 2025",
+    inactiveReason: "Top models score 96%+, even the hardest math tier is effectively solved",
   },
 };
 
