@@ -142,14 +142,14 @@ function isBenchmarkActive(benchKey, filterEndQuarter) {
 const COST_BENCHMARK_META = {
   gpqa: {
     name: "GPQA Diamond", threshold: 36, thresholdLabel: "36%",
-    description: "Best-in-the-world science reasoning, Nov 2023",
-    context: "When GPQA Diamond launched, GPT-4 scored 35.7%",
+    description: "Graduate-level science questions in physics, chemistry, and biology. Domain experts achieve ~65%; non-experts perform at chance. The cost threshold (36%) is set at what GPT-4 scored when the benchmark launched in late 2023. Pricing data from Artificial Analysis.",
+    link: "https://arxiv.org/abs/2311.12022",
     color: "#06b6d4", startQuarter: "Q4 2023",
   },
   "mmlu-pro": {
     name: "MMLU-Pro", threshold: 73, thresholdLabel: "73%",
-    description: "Best-in-the-world academic knowledge, Jun 2024",
-    context: "When MMLU-Pro launched, GPT-4o scored 72.6%",
+    description: "A harder successor to MMLU with 10 answer choices (vs 4) across 14 academic subjects, designed to test genuine reasoning rather than recall. The cost threshold (73%) is set at what GPT-4o scored when the benchmark launched in mid-2024. Pricing data from Artificial Analysis.",
+    link: "https://arxiv.org/abs/2406.01574",
     color: "#a855f7", startQuarter: "Q2 2024",
   },
 };
