@@ -13,6 +13,32 @@ function buildPointStyleArrays(verifiedArr, color) {
 }
 
 // ─── Constants ───────────────────────────────────────────────
+const SITE_URL = "ai-race.vercel.app";
+
+const BENCHMARK_SOURCE_MAP = {
+  "gpqa":          "Artificial Analysis",
+  "aime":          "Epoch AI",
+  "arc-agi-1":     "ARC Prize",
+  "arc-agi-2":     "ARC Prize",
+  "hle":           "Artificial Analysis",
+  "swe-bench":     "SWE-bench",
+  "swe-bench-pro": "Scale AI SEAL",
+  "frontiermath":  "Epoch AI",
+  "math-l5":       "Epoch AI",
+};
+
+const COST_SOURCE = "Artificial Analysis";
+
+// Maps raw source slugs (from Supabase) to display names for tooltips
+const SOURCE_DISPLAY_MAP = {
+  "artificialanalysis": "Artificial Analysis",
+  "epoch":              "Epoch AI",
+  "arcprize":           "ARC Prize",
+  "swebench":           "SWE-bench",
+  "manual":             "Scale AI SEAL",
+  "model_card":         "Model card",
+};
+
 const CHART_DPR = 3;
 const INACTIVE_COLOR = "#4b5563";       // grey-600
 const INACTIVE_BORDER_WIDTH = 1.5;      // thinner than active (2.5)
@@ -61,6 +87,50 @@ const COST_BENCHMARK_COLORS = {
   "mmlu-pro": "#a855f7",
 };
 
+// ─── Source helpers ──────────────────────────────────────────
+function getVisibleSources() {
+  if (currentMode === "cost") return [COST_SOURCE];
+
+  const benchKeys = currentMode === "race"
+    ? [currentBenchmark]
+    : Object.keys(BENCHMARKS);
+
+  const sourceOrder = [
+    "Artificial Analysis", "Epoch AI", "ARC Prize",
+    "SWE-bench", "Scale AI SEAL", "Model cards (unverified)",
+  ];
+  const seen = new Set();
+  for (const key of benchKeys) {
+    const src = BENCHMARK_SOURCE_MAP[key];
+    if (src) seen.add(src);
+  }
+  if (hasVisibleUnverifiedData()) seen.add("Model cards (unverified)");
+  return sourceOrder.filter(s => seen.has(s));
+}
+
+function hasVisibleUnverifiedData() {
+  if (!chart) return false;
+  return chart.data.datasets.some(ds =>
+    ds._verified && ds._verified.some(v => v === false)
+  );
+}
+
+function updateCitationLine() {
+  const el = document.getElementById("chartCitation");
+  if (!el) return;
+  const sources = getVisibleSources();
+  el.innerHTML =
+    `<span>Source: ${sources.join(", ")}</span>` +
+    `<button class="chart-action-btn" id="citationInfoBtn" title="View methodology">` +
+    `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">` +
+    `<circle cx="8" cy="8" r="6.25"/><path d="M8 7v4"/><circle cx="8" cy="5" r="0.5" fill="currentColor" stroke="none"/>` +
+    `</svg></button>`;
+  document.getElementById("citationInfoBtn").addEventListener("click", () => {
+    const target = document.getElementById("methodologySection") || document.getElementById("infoCard");
+    if (target) target.scrollIntoView({ behavior: "smooth" });
+  });
+}
+
 // ─── Initialize ──────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
   try {
@@ -75,6 +145,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderFilterPills();
     renderChart();
     renderCustomLegend();
+    updateCitationLine();
     renderInfoArea();
     showLoading(false);
     fetchAnalysis("all-time");
@@ -260,8 +331,7 @@ function renderModeToggle() {
       selectedLab = null;
       currentCostBenchmark = null;
       renderFilterPills();
-      updateChart();
-      renderCustomLegend();
+      updateChart(); // also calls renderCustomLegend() + updateCitationLine()
       renderInfoArea();
     });
   });
@@ -310,6 +380,7 @@ function buildDatasets() {
         label: lab.name,
         data: bench.scores[labKey].map(d => d ? d.score : null),
         _models: bench.scores[labKey].map(d => d ? d.model : null),
+        _source: bench.scores[labKey].map(d => d ? d.source : null),
         _verified: verifiedArr,
         borderColor: lab.color,
         backgroundColor: lab.color + "33",
@@ -334,6 +405,7 @@ function buildDatasets() {
       const frontierModels = [];
       const frontierLabs = [];
       const frontierVerified = [];
+      const frontierSources = [];
 
       // Find the activeUntil quarter index for truncation
       let activeUntilIdx = TIME_LABELS.length - 1;
@@ -350,6 +422,7 @@ function buildDatasets() {
         let bestModel = null;
         let bestLab = null;
         let bestVerified = true;
+        let bestSource = null;
 
         for (const labKey of labKeys) {
           const entry = benchData.scores[labKey][i];
@@ -358,6 +431,7 @@ function buildDatasets() {
             bestModel = entry.model;
             bestLab = labKey;
             bestVerified = entry.verified !== false;
+            bestSource = entry.source || null;
           }
         }
 
@@ -375,6 +449,7 @@ function buildDatasets() {
             bestModel = null;
             bestLab = null;
             bestVerified = true;
+            bestSource = null;
           }
         }
 
@@ -382,6 +457,7 @@ function buildDatasets() {
         frontierModels.push(bestModel);
         frontierLabs.push(bestLab);
         frontierVerified.push(bestVerified);
+        frontierSources.push(bestSource);
       }
 
       const color = BENCHMARK_COLORS[benchKey];
@@ -392,6 +468,7 @@ function buildDatasets() {
         data: frontierData,
         _models: frontierModels,
         _labs: frontierLabs,
+        _source: frontierSources,
         _verified: frontierVerified,
         _benchKey: benchKey,
         _isInactive: isInactive,
@@ -544,6 +621,7 @@ function renderChart() {
         if (model) line += `\n  Model: ${model}`;
         if (lab) line += ` (${lab})`;
         if (score != null) line += `\n  Score: ${score}%`;
+        line += `\n  Source: Artificial Analysis`;
         return line.split("\n");
       }
     : function(context) {
@@ -559,8 +637,11 @@ function renderChart() {
           line += ` (${model})`;
         }
         const isVerified = context.dataset._verified?.[context.dataIndex] !== false;
+        const rawSource = context.dataset._source?.[context.dataIndex];
         if (!isVerified) {
-          line += `  !! Unverified !!`;
+          line += ` · Unverified (model card)`;
+        } else if (rawSource) {
+          line += ` · ${SOURCE_DISPLAY_MAP[rawSource] || rawSource}`;
         }
         return line;
       };
@@ -947,6 +1028,7 @@ function updateChart() {
     chart.destroy();
     renderChart();
     renderCustomLegend();
+    updateCitationLine();
     return;
   }
 
@@ -954,6 +1036,7 @@ function updateChart() {
   chart.data.datasets.forEach((_, i) => chart.setDatasetVisibility(i, true));
   applyDateRange();
   renderCustomLegend();
+  updateCitationLine();
 
   // Check empty state after update
   const hasData = chart.data.datasets.some(ds => ds.data.some(v => v !== null));
@@ -998,7 +1081,7 @@ function renderCostInfoArea(card) {
   html += '</div>';
   html += `
     <div class="cost-explanation">
-      <p>Shows the cheapest model (any lab) scoring above a fixed threshold on each benchmark, measured in $/M tokens (blended 3:1 input:output). Thresholds are set at what the best model scored when each benchmark launched. Uses cumulative minimum \u2014 once a cheaper model exists, the price floor never rises.</p>
+      <p>Shows the cheapest model (any lab) scoring above a fixed threshold on each benchmark, measured in $/M tokens (blended 3:1 input:output). Thresholds are set at what the best model scored when each benchmark launched. Uses cumulative minimum: once a cheaper model exists, the price floor never rises.</p>
     </div>
   `;
 
@@ -1016,7 +1099,12 @@ function renderInfoArea() {
   const autoExpand = (currentMode === "race") ? currentBenchmark : null;
   const filterEnd = getFilterEndDate();
 
-  let html = '<div class="benchmark-list">';
+  let html = `
+    <div class="methodology-intro" id="methodologySection">
+      <p>Scores use independently verified sources wherever available (Artificial Analysis, Epoch AI, ARC Prize, SWE-bench, Scale AI SEAL), shown as solid dots. Where no independent evaluation exists yet, self-reported model card scores from official lab announcements are used, shown as <strong>hollow dots</strong>.</p>
+    </div>
+  `;
+  html += '<div class="benchmark-list">';
 
   for (const [key, bench] of Object.entries(BENCHMARKS)) {
     const color = BENCHMARK_COLORS[key] || INACTIVE_COLOR;
@@ -1201,8 +1289,8 @@ function renderAnalysisSections(markdown, container) {
 
   for (const sec of sections) {
     if (sec.rawTitle) {
-      // Top-level ## heading
-      html += `<div class="analysis-heading"><h2>${escapeHtml(sec.rawTitle)}</h2></div>`;
+      // Top-level ## heading with disclaimer
+      html += `<div class="analysis-heading"><h2>${escapeHtml(sec.rawTitle)}</h2><span class="analysis-disclaimer">Analysis generated by Opus 4.6 using the benchmark data shown. May contain errors!</span></div>`;
       continue;
     }
 
@@ -1344,9 +1432,9 @@ function buildExportCanvas() {
   ctx.fillStyle = "#5f6368";
   ctx.font = `${10 * CHART_DPR}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
   ctx.textAlign = "left";
-  ctx.fillText("ai-race.vercel.app", pad, citationY);
+  ctx.fillText(SITE_URL, pad, citationY);
   ctx.textAlign = "right";
-  ctx.fillText("Data: Epoch AI, SWE-bench, ARC Prize, Artificial Analysis", totalW - pad, citationY);
+  ctx.fillText("Source: " + getVisibleSources().join(", "), totalW - pad, citationY);
 
   return canvas;
 }
