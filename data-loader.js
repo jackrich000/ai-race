@@ -37,42 +37,42 @@ const BENCHMARK_META = {
   // ─── Active benchmarks ───
   "gpqa": {
     name: "GPQA Diamond",
-    description: "Graduate-level science questions spanning physics, chemistry, and biology \u2014 designed so that domain experts achieve ~65% and non-experts perform at chance. Scores sourced from Artificial Analysis, which runs independent evaluations. May differ slightly from lab-reported model card numbers.",
+    description: "Graduate-level science questions in physics, chemistry, and biology. Domain experts achieve ~65%; non-experts perform at chance. Verified scores come from Artificial Analysis's independent evaluations. These are supplemented with unverified model card scores from the labs, to show the latest model releases (shown with hollow dots).",
     category: "Science",
     link: "https://arxiv.org/abs/2311.12022",
     status: "active",
   },
-  "aime": {
-    name: "AIME (OTIS Mock)",
-    description: "Competition-level math problems modeled on the American Invitational Mathematics Examination. We use the OTIS Mock AIME 2024\u20132025 variant tracked by Epoch AI, which is harder than the standard AIME and less susceptible to data contamination.",
-    category: "Math",
-    link: "https://epoch.ai/data/math-benchmark-scores",
-    status: "active",
-  },
   "arc-agi-2": {
     name: "ARC-AGI-2",
-    description: "The harder successor to ARC-AGI-1, released January 2025 as part of ARC Prize 2025. Same data source and filtering as ARC-AGI-1 \u2014 only first-party model submissions from the official ARC Prize leaderboard.",
+    description: "Measures novel pattern recognition and abstraction with tasks that are trivial for humans but difficult for AI. Released January 2025 as part of ARC Prize 2025. Scores from the official ARC Prize leaderboard; only first-party model submissions are included. Third-party scaffolds and wrappers are excluded.",
     category: "Reasoning",
     link: "https://arcprize.org/",
     status: "active",
   },
   "hle": {
     name: "Humanity's Last Exam",
-    description: "A collaboration of 3,000+ experts across 100+ subjects, designed to be the hardest public benchmark. Released January 2025. Scores sourced from Artificial Analysis, which runs independent evaluations. May differ slightly from lab-reported model card numbers.",
+    description: "A collaboration of 3,000+ experts across 100+ subjects, designed to be the hardest public benchmark. Released January 2025. Verified scores come from Artificial Analysis's independent evaluations. These are supplemented with unverified model card scores from the labs, to show the latest model releases (shown with hollow dots).",
     category: "Knowledge",
     link: "https://lastexam.ai/",
     status: "active",
   },
   "swe-bench-pro": {
-    name: "SWE-bench Pro",
-    description: "Long-horizon software engineering tasks in real open-source repositories, hosted on Scale AI\u2019s SEAL platform. The successor to SWE-bench Verified, featuring harder multi-file changes and longer reasoning chains. Scores sourced from the official SEAL leaderboard.",
+    name: "SWE-bench Pro (Public)",
+    description: "Long-horizon software engineering tasks in real open-source repositories. Harder than SWE-bench Verified, with multi-file changes, longer reasoning chains, and fixes for bugs in Verified's question set. Scores from the official Scale AI SEAL public leaderboard. These are supplemented with unverified model card scores from the labs, to show the latest model releases (shown with hollow dots).",
     category: "Coding",
     link: "https://scale.com/leaderboard",
     status: "active",
   },
+  "aime": {
+    name: "AIME (OTIS Mock)",
+    description: "Competition-level math problems modeled on the American Invitational Mathematics Examination. Uses the OTIS Mock AIME 2024\u20132025 variant tracked by Epoch AI, which is harder than the standard AIME and less susceptible to data contamination.",
+    category: "Math",
+    link: "https://epoch.ai/data/math-benchmark-scores",
+    status: "active",
+  },
   "frontiermath": {
     name: "FrontierMath",
-    description: "Research-level mathematics problems (Tiers 1–3) created by professional mathematicians. Currently ~25–50% for best models — significantly harder than competition math (AIME). Independently evaluated by Epoch AI.",
+    description: "Research-level mathematics problems created by professional mathematicians. Goes beyond competition math (AIME) into open research questions requiring deep mathematical reasoning across multiple fields. Independently evaluated by Epoch AI.",
     category: "Math",
     link: "https://epoch.ai/frontiermath",
     status: "active",
@@ -80,7 +80,7 @@ const BENCHMARK_META = {
   // ─── Inactive benchmarks ───
   "humaneval": {
     name: "HumanEval",
-    description: "164 hand-written Python programming problems testing code generation from docstrings. Created by OpenAI in 2021, it became the standard coding benchmark. Top models now score 97%+, making it effectively solved.",
+    description: "164 hand-written Python programming problems testing code generation from docstrings. Created by OpenAI in 2021, it became the standard coding benchmark. Scores compiled from published papers and technical reports.",
     category: "Coding",
     link: "https://arxiv.org/abs/2107.03374",
     status: "saturated",
@@ -89,7 +89,7 @@ const BENCHMARK_META = {
   },
   "arc-agi-1": {
     name: "ARC-AGI-1",
-    description: "Measures novel pattern recognition and abstraction \u2014 tasks that are trivial for humans but difficult for AI. Scores sourced directly from the ARC Prize official leaderboard. Only first-party model submissions are included; third-party scaffolds and wrappers are excluded.",
+    description: "The original ARC Prize benchmark for novel pattern recognition and abstraction. Tasks that are trivial for humans but difficult for AI. Scores from the official ARC Prize leaderboard; only first-party model submissions are included.",
     category: "Reasoning",
     link: "https://arcprize.org/",
     status: "deprecated",
@@ -98,7 +98,7 @@ const BENCHMARK_META = {
   },
   "swe-bench": {
     name: "SWE-bench Verified",
-    description: "Real GitHub issues from popular open-source Python repositories \u2014 models must generate working patches. Scores sourced from the official SWE-bench Verified leaderboard. Since every submission pairs a scaffold/agent with a model, we attribute scores to the underlying model\u2019s lab. Entries using models from multiple labs are excluded.",
+    description: "Real GitHub issues from popular open-source Python repositories. Models must generate working patches. Scores from the official SWE-bench Verified leaderboard. Each submission pairs a scaffold with a model; we attribute scores to the underlying model\u2019s lab. Multi-lab entries are excluded.",
     category: "Coding",
     link: "https://www.swebench.com/",
     status: "saturated",
@@ -107,7 +107,7 @@ const BENCHMARK_META = {
   },
   "math-l5": {
     name: "MATH Level 5",
-    description: "The hardest tier of the MATH benchmark \u2014 olympiad and research-competition problems requiring multi-step reasoning. Scores rose from ~23% to ~98% between 2023 and 2025 as models conquered even the most difficult mathematical problems. Independently evaluated by Epoch AI.",
+    description: "The hardest tier of the MATH benchmark: olympiad and research-competition problems requiring multi-step reasoning. Independently evaluated by Epoch AI.",
     category: "Math",
     link: "https://arxiv.org/abs/2103.03874",
     status: "saturated",

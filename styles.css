@@ -181,6 +181,18 @@ main {
   position: relative;
 }
 
+/* Chart citation line */
+.chart-citation {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  padding-top: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 /* Custom chart legend */
 .chart-legend {
   display: flex;
@@ -362,6 +374,19 @@ main {
   text-decoration: underline;
 }
 
+/* Methodology intro */
+.methodology-intro {
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.methodology-intro p {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
 /* Expandable benchmark list (frontier mode) */
 .benchmark-list {
   display: flex;
@@ -440,6 +465,9 @@ main {
 }
 
 .analysis-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
   margin-bottom: 0.5rem;
 }
 
@@ -522,6 +550,13 @@ main {
   color: var(--text-muted);
   font-size: 0.875rem;
   padding: 1.5rem 0;
+}
+
+/* Analysis disclaimer */
+.analysis-disclaimer {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
 }
 
 /* Chart loading / error / empty states */
