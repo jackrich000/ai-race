@@ -29,6 +29,16 @@ const BENCHMARK_SOURCE_MAP = {
 
 const COST_SOURCE = "Artificial Analysis";
 
+// Maps raw source slugs (from Supabase) to display names for tooltips
+const SOURCE_DISPLAY_MAP = {
+  "artificialanalysis": "Artificial Analysis",
+  "epoch":              "Epoch AI",
+  "arcprize":           "ARC Prize",
+  "swebench":           "SWE-bench",
+  "manual":             "Scale AI SEAL",
+  "model_card":         "Model card",
+};
+
 const CHART_DPR = 3;
 const INACTIVE_COLOR = "#4b5563";       // grey-600
 const INACTIVE_BORDER_WIDTH = 1.5;      // thinner than active (2.5)
@@ -321,9 +331,7 @@ function renderModeToggle() {
       selectedLab = null;
       currentCostBenchmark = null;
       renderFilterPills();
-      updateChart();
-      renderCustomLegend();
-      updateCitationLine();
+      updateChart(); // also calls renderCustomLegend() + updateCitationLine()
       renderInfoArea();
     });
   });
@@ -633,15 +641,7 @@ function renderChart() {
         if (!isVerified) {
           line += ` · Unverified (model card)`;
         } else if (rawSource) {
-          const sourceDisplayMap = {
-            "artificialanalysis": "Artificial Analysis",
-            "epoch": "Epoch AI",
-            "arcprize": "ARC Prize",
-            "swebench": "SWE-bench",
-            "manual": "Scale AI SEAL",
-            "model_card": "Model card",
-          };
-          line += ` · ${sourceDisplayMap[rawSource] || rawSource}`;
+          line += ` · ${SOURCE_DISPLAY_MAP[rawSource] || rawSource}`;
         }
         return line;
       };
