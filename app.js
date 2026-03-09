@@ -53,6 +53,7 @@ let chart = null;
 let chartMode = null; // tracks which mode the chart was built for
 let isolatedIndex = null;
 let highlightedInactiveIndex = null; // currently highlighted inactive dataset
+let cachedAnalysis = null; // parsed JSON from Supabase
 
 // Clipboard SVG icon for copy buttons
 const COPY_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V3.5a1.5 1.5 0 00-1.5-1.5H3.5A1.5 1.5 0 002 3.5V9a1.5 1.5 0 001.5 1.5h2"/></svg>';
@@ -333,6 +334,7 @@ function renderModeToggle() {
       renderFilterPills();
       updateChart(); // also calls renderCustomLegend() + updateCitationLine()
       renderInfoArea();
+      renderAnalysisCard(currentMode);
     });
   });
 }
@@ -1046,101 +1048,77 @@ function updateChart() {
 }
 
 // ─── Info area ───────────────────────────────────────────────
-function renderCostInfoArea(card) {
-  let html = '<div class="cost-headlines">';
-
-  for (const [key, meta] of Object.entries(COST_BENCHMARK_META)) {
-    const data = COST_DATA[key];
-    if (!data) continue;
-
-    const startIdx = TIME_LABELS.indexOf(meta.startQuarter);
-    let firstEntry = null, lastEntry = null;
-    let firstQ = null, lastQ = null;
-
-    for (let i = startIdx; i < data.entries.length; i++) {
-      if (data.entries[i]) {
-        if (!firstEntry) { firstEntry = data.entries[i]; firstQ = TIME_LABELS[i]; }
-        lastEntry = data.entries[i]; lastQ = TIME_LABELS[i];
-      }
-    }
-
-    if (firstEntry && lastEntry && firstEntry.price > 0 && lastEntry.price > 0) {
-      const decline = Math.round(firstEntry.price / lastEntry.price);
-      const fmtPrice = p => p >= 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(3)}`;
-      html += `
-        <div class="cost-headline-item">
-          <span class="pill-dot" style="background-color: ${meta.color}"></span>
-          <span class="cost-headline-label">${meta.name} (${meta.thresholdLabel}):</span>
-          <span class="cost-decline">${decline}x cheaper</span>
-          <span class="cost-range">since ${firstQ} (${fmtPrice(firstEntry.price)} \u2192 ${fmtPrice(lastEntry.price)})</span>
-        </div>
-      `;
-    }
-  }
-
-  html += '</div>';
-  html += `
-    <div class="cost-explanation">
-      <p>Shows the cheapest model (any lab) scoring above a fixed threshold on each benchmark, measured in $/M tokens (blended 3:1 input:output). Thresholds are set at what the best model scored when each benchmark launched. Uses cumulative minimum: once a cheaper model exists, the price floor never rises.</p>
-    </div>
-  `;
-
-  card.innerHTML = html;
-}
-
 function renderInfoArea() {
   const card = document.getElementById("infoCard");
 
-  if (currentMode === "cost") {
-    renderCostInfoArea(card);
-    return;
-  }
-
-  const autoExpand = (currentMode === "race") ? currentBenchmark : null;
   const filterEnd = getFilterEndDate();
+
+  // Methodology intro varies by mode
+  const methodologyText = currentMode === "cost"
+    ? "Shows the cheapest model (any lab) scoring above a fixed threshold on each benchmark, measured in $/M tokens (blended 3:1 input:output). Thresholds are set at what the best model scored when each benchmark launched. Uses cumulative minimum: once a cheaper model exists, the price floor never rises."
+    : 'Scores use independently verified sources wherever available (Artificial Analysis, Epoch AI, ARC Prize, SWE-bench, Scale AI SEAL), shown as solid dots. Where no independent evaluation exists yet, self-reported model card scores from official lab announcements are used, shown as <strong>hollow dots</strong>.';
 
   let html = `
     <div class="methodology-intro" id="methodologySection">
-      <p>Scores use independently verified sources wherever available (Artificial Analysis, Epoch AI, ARC Prize, SWE-bench, Scale AI SEAL), shown as solid dots. Where no independent evaluation exists yet, self-reported model card scores from official lab announcements are used, shown as <strong>hollow dots</strong>.</p>
+      <p>${methodologyText}</p>
     </div>
   `;
   html += '<div class="benchmark-list">';
 
-  for (const [key, bench] of Object.entries(BENCHMARKS)) {
-    const color = BENCHMARK_COLORS[key] || INACTIVE_COLOR;
-    const isOpen = key === autoExpand;
-    const isInactive = !isBenchmarkActive(key, filterEnd);
-    const meta = BENCHMARK_META[key];
-
-    // Status badge
-    let statusBadge = "";
-    if (isInactive && meta.status === "deprecated") {
-      statusBadge = `<span class="status-badge deprecated">Deprecated ${meta.activeUntil}</span>`;
-    } else if (isInactive && meta.status === "saturated") {
-      statusBadge = `<span class="status-badge saturated">Saturated ${meta.activeUntil}</span>`;
-    }
-
-    // Description with inactive reason
-    let description = bench.description;
-    if (isInactive && meta.inactiveReason) {
-      description += ` <em style="color:var(--text-muted);">${meta.inactiveReason}.</em>`;
-    }
-
-    html += `
-      <div class="benchmark-item" data-bench="${key}">
-        <button class="benchmark-item-header" aria-expanded="${isOpen}">
-          <span class="pill-dot" style="background-color: ${isInactive ? INACTIVE_COLOR : color}"></span>
-          <span class="benchmark-item-name">${bench.name}</span>
-          <span class="category-badge">${bench.category}</span>
-          ${statusBadge}
-          <span class="expand-icon">${isOpen ? "\u2212" : "+"}</span>
-        </button>
-        <div class="benchmark-item-detail"${isOpen ? "" : " hidden"}>
-          <p>${description}</p>
-          <a href="${bench.link}" target="_blank" rel="noopener">Learn more &rarr;</a>
+  if (currentMode === "cost") {
+    for (const [key, meta] of Object.entries(COST_BENCHMARK_META)) {
+      const color = COST_BENCHMARK_COLORS[key] || "#6c9eff";
+      html += `
+        <div class="benchmark-item">
+          <button class="benchmark-item-header" aria-expanded="false">
+            <span class="pill-dot" style="background-color: ${color}"></span>
+            <span class="benchmark-item-name">${meta.name}</span>
+            <span class="expand-icon">+</span>
+          </button>
+          <div class="benchmark-item-detail" hidden>
+            <p>${meta.description}</p>
+            ${meta.link ? `<a href="${meta.link}" target="_blank" rel="noopener">Learn more &rarr;</a>` : ""}
+          </div>
         </div>
-      </div>
-    `;
+      `;
+    }
+  } else {
+    for (const [key, bench] of Object.entries(BENCHMARKS)) {
+      const color = BENCHMARK_COLORS[key] || INACTIVE_COLOR;
+      const isOpen = false;
+      const isInactive = !isBenchmarkActive(key, filterEnd);
+      const meta = BENCHMARK_META[key];
+
+      // Status badge
+      let statusBadge = "";
+      if (isInactive && meta.status === "deprecated") {
+        statusBadge = `<span class="status-badge deprecated">Deprecated ${meta.activeUntil}</span>`;
+      } else if (isInactive && meta.status === "saturated") {
+        statusBadge = `<span class="status-badge saturated">Saturated ${meta.activeUntil}</span>`;
+      }
+
+      // Description with inactive reason
+      let description = bench.description;
+      if (isInactive && meta.inactiveReason) {
+        description += ` <em style="color:var(--text-muted);">${meta.inactiveReason}.</em>`;
+      }
+
+      html += `
+        <div class="benchmark-item" data-bench="${key}">
+          <button class="benchmark-item-header" aria-expanded="${isOpen}">
+            <span class="pill-dot" style="background-color: ${isInactive ? INACTIVE_COLOR : color}"></span>
+            <span class="benchmark-item-name">${bench.name}</span>
+            <span class="category-badge">${bench.category}</span>
+            ${statusBadge}
+            <span class="expand-icon">${isOpen ? "\u2212" : "+"}</span>
+          </button>
+          <div class="benchmark-item-detail"${isOpen ? "" : " hidden"}>
+            <p>${description}</p>
+            <a href="${bench.link}" target="_blank" rel="noopener">Learn more &rarr;</a>
+          </div>
+        </div>
+      `;
+    }
   }
 
   html += '</div>';
@@ -1172,6 +1150,9 @@ function populateDateRangeYears() {
   const select = document.getElementById("dateRange");
   const years = [...new Set(TIME_LABELS.map(q => q.substring(3)))];
   for (const year of years) {
+    // Skip single-quarter years (no meaningful change to show)
+    const quartersInYear = TIME_LABELS.filter(q => q.endsWith(year));
+    if (quartersInYear.length <= 1) continue;
     const opt = document.createElement("option");
     opt.value = year;
     opt.textContent = year;
@@ -1222,19 +1203,6 @@ function applyDateRange() {
 }
 
 // ─── Analysis fetch & render ─────────────────────────────────
-function renderMarkdown(md) {
-  return escapeHtml(md)
-    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(/^- (.+)$/gm, "<li>$1</li>")
-    .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
-    .replace(/\n{2,}/g, "</p><p>")
-    .replace(/^(?!<[hup]|<li|<ul)(.+)$/gm, "<p>$1</p>")
-    .replace(/<p><\/p>/g, "");
-}
-
 async function fetchAnalysis(preset) {
   const section = document.getElementById("analysisSection");
   section.innerHTML = '<div class="analysis-loading-inline"><div class="spinner"></div></div>';
@@ -1252,74 +1220,116 @@ async function fetchAnalysis(preset) {
     const rows = await resp.json();
 
     if (rows.length === 0 || !rows[0].analysis) {
+      cachedAnalysis = null;
       section.innerHTML = '<div class="analysis-empty">No analysis available for this time range.</div>';
       return;
     }
 
-    renderAnalysisSections(rows[0].analysis, section);
+    try {
+      cachedAnalysis = JSON.parse(rows[0].analysis);
+    } catch (e) {
+      cachedAnalysis = null;
+      section.innerHTML = '<div class="analysis-empty">Failed to parse analysis data.</div>';
+      return;
+    }
+
+    renderAnalysisCard(currentMode);
   } catch (err) {
     console.error("Failed to fetch analysis:", err);
+    cachedAnalysis = null;
     section.innerHTML = '<div class="analysis-empty">Failed to load analysis.</div>';
   }
 }
 
-function renderAnalysisSections(markdown, container) {
-  // Split on ### headers
-  const sections = [];
-  let currentSection = null;
-
-  for (const line of markdown.split("\n")) {
-    if (line.startsWith("### ")) {
-      if (currentSection) sections.push(currentSection);
-      currentSection = { title: line.substring(4).trim(), lines: [] };
-    } else if (line.startsWith("## ")) {
-      // Top-level heading — render as intro
-      if (currentSection) sections.push(currentSection);
-      currentSection = { title: null, rawTitle: line.substring(3).trim(), lines: [] };
-    } else {
-      if (currentSection) currentSection.lines.push(line);
-      else {
-        currentSection = { title: null, lines: [line] };
-      }
-    }
-  }
-  if (currentSection) sections.push(currentSection);
-
-  let html = '';
-
-  for (const sec of sections) {
-    if (sec.rawTitle) {
-      // Top-level ## heading with disclaimer
-      html += `<div class="analysis-heading"><h2>${escapeHtml(sec.rawTitle)}</h2><span class="analysis-disclaimer">Analysis generated by Opus 4.6 using the benchmark data shown. May contain errors!</span></div>`;
-      continue;
-    }
-
-    const body = sec.lines.join("\n").trim();
-    if (!body && !sec.title) continue;
-
-    if (sec.title === "Headlines") {
-      // Render each bullet as a separate item with its own copy button
-      const bullets = body.split("\n").filter(l => l.startsWith("- ")).map(l => l.substring(2).trim());
-      html += '<div class="analysis-card headlines-card">';
-      html += '<div class="section-header"><h3>Headlines</h3></div>';
-      html += '<ul class="headline-list">';
-      for (const bullet of bullets) {
-        const rendered = renderMarkdown("- " + bullet).replace(/<\/?ul>/g, "").replace(/<\/?li>/g, "");
-        html += `<li class="headline-item"><span class="headline-text">${rendered.trim()}</span><button class="copy-icon-btn" title="Copy headline" data-copy-text="${escapeHtml(bullet)}">${COPY_ICON_SVG}</button></li>`;
-      }
-      html += '</ul></div>';
-    } else if (sec.title) {
-      // Body section with heading + copy icon
-      const rendered = renderMarkdown(body);
-      const plainText = body.replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1");
-      html += `<div class="analysis-card"><div class="section-header"><h3>${escapeHtml(sec.title)}</h3><button class="copy-icon-btn" title="Copy section" data-copy-text="${escapeHtml(sec.title + "\n\n" + plainText)}">${COPY_ICON_SVG}</button></div><div class="analysis-text">${rendered}</div></div>`;
-    }
+function renderAnalysisCard(mode) {
+  const section = document.getElementById("analysisSection");
+  if (!cachedAnalysis) {
+    section.innerHTML = '<div class="analysis-empty">No analysis available for this time range.</div>';
+    return;
   }
 
-  container.innerHTML = html;
+  const data = cachedAnalysis[mode];
+  if (!data) {
+    section.innerHTML = '<div class="analysis-empty">No analysis available for this mode.</div>';
+    return;
+  }
 
-  // Wire copy buttons
-  container.querySelectorAll(".copy-icon-btn").forEach(btn => {
+  const plainParts = [];
+  let html = '<div class="analysis-card">';
+
+  // Copy button (top-right)
+  // (copyText populated below, wired after innerHTML set)
+
+  // Callout stats (bulleted list)
+  html += '<ul class="callout-stats">';
+
+  if (mode === "frontier") {
+    const c = data.callouts || {};
+    if (c.medianIncrease) {
+      html += `<li class="callout-line"><span><span class="callout-obj">\u2191</span> <span class="callout-num">${escapeHtml(c.medianIncrease.value)}</span> <span class="callout-obj">median increase</span> ${escapeHtml(c.medianIncrease.detail)}</span></li>`;
+      plainParts.push(`↑ ${c.medianIncrease.value} median increase ${c.medianIncrease.detail}`);
+    }
+    if (c.biggestMover) {
+      const pp = c.biggestMover.ppChange;
+      html += `<li class="callout-line"><span><span class="callout-obj">Biggest gain: ${escapeHtml(c.biggestMover.name)}</span>, <span class="callout-num">${pp >= 0 ? "+" : ""}${pp}</span> percentage points${c.biggestMover.periodLabel ? " " + escapeHtml(c.biggestMover.periodLabel) : ""}</span></li>`;
+      plainParts.push(`Biggest gain: ${c.biggestMover.name}, ${pp >= 0 ? "+" : ""}${pp} pp`);
+    }
+    if (c.benchmarksSaturated) {
+      html += `<li class="callout-line"><span><span class="callout-num">${c.benchmarksSaturated.count}</span> <span class="callout-obj">major benchmarks defeated</span>: ${escapeHtml(c.benchmarksSaturated.names.join(", "))}</span></li>`;
+      plainParts.push(`${c.benchmarksSaturated.count} defeated: ${c.benchmarksSaturated.names.join(", ")}`);
+    }
+  } else if (mode === "race") {
+    const c = data.callouts || {};
+    if (c.leader) {
+      const l = c.leader;
+      let changeText = "";
+      if (l.direction && l.direction !== "unchanged" && l.startAvgRank !== null) {
+        const dirWord = l.direction === "down" ? "improving from" : "worsening from";
+        changeText = `, ${dirWord} <span class="callout-num">${l.startAvgRank}</span> ${l.monthsBack} months ago`;
+      }
+      html += `<li class="callout-line"><span><span class="callout-obj">Overall Leader: ${escapeHtml(l.name)}</span> Avg. rank <span class="callout-num">${l.avgRank}</span> across ${l.benchmarkCount} active benchmarks${changeText}. <span class="callout-num">${l.firsts}</span> first-place finishes</span></li>`;
+      plainParts.push(`Overall Leader: ${l.name}. Avg rank ${l.avgRank}. ${l.firsts} firsts`);
+    }
+    if (c.biggestMover) {
+      const m = c.biggestMover;
+      const dirWord = m.direction === "improved" ? "improving from" : "worsening from";
+      const startRank = Math.round((m.avgRank - m.change) * 10) / 10;
+      html += `<li class="callout-line"><span><span class="callout-obj">Biggest mover: ${escapeHtml(m.name)}</span> Avg. rank <span class="callout-num">${m.avgRank}</span> across ${m.benchmarkCount || (c.leader ? c.leader.benchmarkCount : 6)} active benchmarks, ${dirWord} <span class="callout-num">${startRank}</span> ${m.monthsBack} months ago. <span class="callout-num">${m.firsts}</span> first-place finishes</span></li>`;
+      plainParts.push(`Biggest mover: ${m.name}. Avg rank ${m.avgRank}, ${dirWord} ${startRank}`);
+    }
+  } else if (mode === "cost") {
+    const fmtPrice = p => p >= 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(3)}`;
+    for (const item of (data.callouts || [])) {
+      html += `<li class="callout-line"><span><span class="callout-obj">${escapeHtml(item.benchmark)} (${escapeHtml(item.threshold)})</span>: <span class="callout-num">${escapeHtml(item.decline)}</span> cheaper now versus ${escapeHtml(item.startQ)} (${fmtPrice(item.startPrice)} \u2192 ${fmtPrice(item.endPrice)})</span></li>`;
+      plainParts.push(`${item.benchmark}: ${item.decline} cheaper now vs ${item.startQ} (${fmtPrice(item.startPrice)} → ${fmtPrice(item.endPrice)})`);
+    }
+  }
+  html += '</ul>';
+
+  // Headline + commentary
+  if (data.headline) {
+    html += `<p class="analysis-headline">${escapeHtml(data.headline)}</p>`;
+    plainParts.push(data.headline);
+  }
+  if (data.commentary) {
+    html += `<p class="analysis-commentary">${escapeHtml(data.commentary)}</p>`;
+    plainParts.push(data.commentary);
+  }
+
+  // Disclaimer
+  html += '<div class="analysis-footer">';
+  html += '<span class="analysis-disclaimer">Stats computed. Not all labs submit for all benchmarks. Analysis generated by Opus 4.6, may contain errors.</span>';
+  html += '</div>';
+
+  // Copy button (top-right, positioned absolute)
+  const copyText = plainParts.join("\n");
+  html += `<button class="copy-icon-btn" title="Copy analysis" data-copy-text="${escapeHtml(copyText)}">${COPY_ICON_SVG}</button>`;
+
+  html += '</div>';
+  section.innerHTML = html;
+
+  // Wire copy button
+  section.querySelectorAll(".copy-icon-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const text = btn.getAttribute("data-copy-text");
       navigator.clipboard.writeText(text).then(() => {

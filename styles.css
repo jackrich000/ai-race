@@ -462,32 +462,72 @@ main {
   border-radius: var(--radius-lg);
   padding: 1rem 1.25rem;
   margin-bottom: 0.75rem;
+  position: relative;
 }
 
-.analysis-heading {
+/* Copy button — top-right of card */
+.analysis-card > .copy-icon-btn {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+}
+
+/* Callout stats list */
+.callout-stats {
   display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  margin-bottom: 0.5rem;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+  list-style: none;
+  padding: 0;
 }
 
-.analysis-heading h2 {
-  font-size: 1rem;
+.callout-line {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+
+.callout-line::before {
+  content: "\2022";
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.callout-obj {
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.section-header {
+.callout-num {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.analysis-headline {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  margin-bottom: 0.35rem;
+  line-height: 1.5;
+}
+
+.analysis-commentary {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin-bottom: 0.5rem;
+}
+
+.analysis-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
-}
-
-.section-header h3 {
-  font-size: 0.925rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+  margin-top: 0.25rem;
 }
 
 .copy-icon-btn {
@@ -508,35 +548,6 @@ main {
   color: var(--text-primary);
   border-color: var(--border);
   background: var(--bg-tertiary);
-}
-
-.headline-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.headline-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding: 0.35rem 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.headline-item:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.headline-text {
-  flex: 1;
-  color: var(--text-primary);
-  font-size: 0.875rem;
-  line-height: 1.55;
 }
 
 .analysis-loading-inline {
@@ -613,80 +624,10 @@ main {
   to { transform: rotate(360deg); }
 }
 
-.analysis-text {
-  color: var(--text-primary);
-  font-size: 0.875rem;
-  line-height: 1.7;
-}
-
-.analysis-text h2 {
-  font-size: 1rem;
-  font-weight: 600;
-  margin: 0.75rem 0 0.35rem;
-}
-
-.analysis-text h2:first-child {
-  margin-top: 0;
-}
-
-.analysis-text strong {
-  color: var(--accent);
-}
-
-.analysis-text ul {
-  padding-left: 1.25rem;
-  margin: 0.35rem 0;
-}
-
-.analysis-text li {
-  margin-bottom: 0.25rem;
-}
-
-.analysis-text p {
-  margin-bottom: 0.5rem;
-}
-
-/* Cost of Intelligence info area */
-.cost-headlines {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.cost-headline-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.cost-headline-label {
-  font-weight: 500;
-  color: var(--text-primary);
-  font-size: 0.875rem;
-}
-
-.cost-decline {
-  color: #10b981;
-  font-weight: 700;
-  font-size: 0.9rem;
-}
-
-.cost-range {
+/* Cost callout styling */
+.callout-line .cost-range {
   color: var(--text-muted);
   font-size: 0.8rem;
-}
-
-.cost-explanation {
-  border-top: 1px solid var(--border);
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-}
-
-.cost-explanation p {
-  color: var(--text-secondary);
-  font-size: 0.8rem;
-  line-height: 1.55;
 }
 
 /* Inactive benchmark tooltip */
