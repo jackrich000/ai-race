@@ -32,7 +32,8 @@ Minimum viable launch. Organized into waves for parallel execution.
 
 - [ ] **Security audit** — Deep dive all potential security holes and risks before public release. Execute necessary improvements.
 - [ ] **Design, accessibility & responsiveness review** — Not a redesign. High-impact / low-effort pass: contrast, focus states, aria labels, colour-blind friendliness, visual hierarchy, spacing. Also responsiveness: desktop sizing/scaling at 100% zoom, mobile pitfalls (hardcoded px widths, missing overflow handling, media query gaps, font sizing).
-- [ ] **Refine AI analysis prompt & UI** — Tweak prompt for longer timeframes; enforce Xx notation when change >2x and % when <2x. Reconsider analysis UI: current per-section cards vs single card for the whole report. Also: regenerate all cached analyses after benchmark expansion (FrontierMath + MATH Level 5 added, need `ANTHROPIC_API_KEY` locally or via Vercel CLI).
+- [x] **Refine AI analysis prompt & UI** — Rearchitected: structured stat cards (code-computed) + LLM headlines/commentary (JSON). Mode-specific rendering, trailing 12-month window, unified info area, single-quarter presets filtered. All 7 presets regenerated. PR #18.
+- [ ] **QA generated analyses across all presets** — Spot-check LLM headlines and commentary across all 7 presets (all-time, last-12-months, last-6-months, last-3-months, 2023, 2024, 2025) and all 3 modes. Check: headlines don't repeat stats, commentary adds genuine insight, numbers are consistent with callouts, tone matches guidelines, edge cases (2023 sparse data, last-3-months single quarter).
 - [ ] **Code cleanliness review & refactor** — Review codebase, refactor where valuable.
 - [ ] **Add contact / author details** — Add links to Jack's Substack and LinkedIn somewhere on the site, so visitors can reach out if it gets traction. Keep it subtle (e.g. footer or small "by" line).
 - [ ] **Write LinkedIn post to announce site**
