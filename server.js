@@ -12,7 +12,13 @@ const MIME = {
 const root = __dirname;
 
 http.createServer((req, res) => {
-  const filePath = path.join(root, req.url === "/" ? "index.html" : req.url);
+  const urlPath = req.url.split("?")[0];
+  const filePath = path.resolve(root, urlPath === "/" ? "index.html" : urlPath.slice(1));
+  if (!filePath.startsWith(root + path.sep) && filePath !== root) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return;
+  }
   fs.readFile(filePath, (err, data) => {
     if (err) {
       res.writeHead(404);
