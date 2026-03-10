@@ -29,24 +29,9 @@ if (!AA_API_KEY) {
   process.exit(1);
 }
 
-const LAB_KEYS = ["openai", "anthropic", "google", "xai", "chinese"];
-
-// Generate quarters from Q1 2023 through the current quarter
-function generateQuarters() {
-  const now = new Date();
-  const endYear = now.getFullYear();
-  const endQ = Math.ceil((now.getMonth() + 1) / 3);
-  const quarters = [];
-  for (let y = 2023; y <= endYear; y++) {
-    for (let q = 1; q <= 4; q++) {
-      quarters.push(`Q${q} ${y}`);
-      if (y === endYear && q === endQ) return quarters;
-    }
-  }
-  return quarters;
-}
-
-const QUARTERS = generateQuarters();
+const {
+  LAB_KEYS, TIME_LABELS: QUARTERS, compareQuarters,
+} = require("../lib/config.js");
 
 // Current quarter midpoint for ARC Prize entries without extractable dates
 const now = new Date();
@@ -160,13 +145,6 @@ const MODEL_CARD_DATA = [
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────
-
-/** Compare quarter strings like "Q1 2023" numerically. Returns negative/zero/positive. */
-function compareQuarters(a, b) {
-  const [qa, ya] = [parseInt(a[1]), parseInt(a.substring(3))];
-  const [qb, yb] = [parseInt(b[1]), parseInt(b.substring(3))];
-  return ya !== yb ? ya - yb : qa - qb;
-}
 
 function normalizeOrg(raw) {
   if (!raw) return null;

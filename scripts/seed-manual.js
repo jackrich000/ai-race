@@ -7,6 +7,7 @@
 //   SUPABASE_SERVICE_KEY="..." node scripts/seed-manual.js
 
 const https = require("https");
+const { LAB_KEYS, TIME_LABELS: QUARTERS } = require("../lib/config.js");
 
 const SUPABASE_URL = "https://jtrhsqdfevyqzzjjvcdr.supabase.co";
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -15,24 +16,6 @@ if (!SUPABASE_SERVICE_KEY) {
   console.error("Error: Set SUPABASE_SERVICE_KEY environment variable.");
   process.exit(1);
 }
-
-// Generate quarters Q1 2023 through current
-function generateQuarters() {
-  const now = new Date();
-  const endYear = now.getFullYear();
-  const endQ = Math.ceil((now.getMonth() + 1) / 3);
-  const quarters = [];
-  for (let y = 2023; y <= endYear; y++) {
-    for (let q = 1; q <= 4; q++) {
-      quarters.push(`Q${q} ${y}`);
-      if (y === endYear && q === endQ) return quarters;
-    }
-  }
-  return quarters;
-}
-
-const QUARTERS = generateQuarters();
-const LAB_KEYS = ["openai", "anthropic", "google", "xai", "chinese"];
 
 // ─── HumanEval data (sourced from model cards / papers) ──────
 // Raw data points: lab, quarter, score, model, verified

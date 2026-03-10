@@ -28,6 +28,10 @@ if (fs.existsSync(envPath)) {
 const Anthropic = require("@anthropic-ai/sdk").default;
 const { createClient } = require("@supabase/supabase-js");
 const { SYSTEM_PROMPT } = require("../lib/analysis-prompt.js");
+const {
+  LABS, LAB_KEYS, BENCHMARK_META, COST_BENCHMARK_META,
+  TIME_LABELS, compareQuarters, getFilterEndDate, isBenchmarkActive,
+} = require("../lib/config.js");
 
 // ─── Config ──────────────────────────────────────────────────
 
@@ -46,119 +50,6 @@ if (!ANTHROPIC_API_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
-
-// ─── Static config (mirrored from data-loader.js) ────────────
-
-function generateTimeLabels() {
-  const now = new Date();
-  const endYear = now.getFullYear();
-  const endQ = Math.ceil((now.getMonth() + 1) / 3);
-  const labels = [];
-  for (let y = 2023; y <= endYear; y++) {
-    for (let q = 1; q <= 4; q++) {
-      labels.push(`Q${q} ${y}`);
-      if (y === endYear && q === endQ) return labels;
-    }
-  }
-  return labels;
-}
-
-const TIME_LABELS = generateTimeLabels();
-
-const LABS = {
-  openai:    { name: "OpenAI" },
-  anthropic: { name: "Anthropic" },
-  google:    { name: "Google DeepMind" },
-  xai:       { name: "xAI" },
-  chinese:   { name: "Chinese Leaders" },
-};
-
-const BENCHMARK_META = {
-  "gpqa": {
-    name: "GPQA Diamond", category: "Science", status: "active",
-    description: "Graduate-level science questions spanning physics, chemistry, and biology",
-  },
-  "aime": {
-    name: "AIME (OTIS Mock)", category: "Math", status: "active",
-    description: "Competition-level math problems modeled on the American Invitational Mathematics Examination",
-  },
-  "arc-agi-2": {
-    name: "ARC-AGI-2", category: "Reasoning", status: "active",
-    description: "The harder successor to ARC-AGI-1, released January 2025",
-  },
-  "hle": {
-    name: "Humanity's Last Exam", category: "Knowledge", status: "active",
-    description: "A collaboration of 3,000+ experts across 100+ subjects",
-  },
-  "swe-bench-pro": {
-    name: "SWE-bench Pro", category: "Coding", status: "active",
-    description: "Long-horizon software engineering tasks in real open-source repositories",
-  },
-  "humaneval": {
-    name: "HumanEval", category: "Coding", status: "saturated",
-    description: "164 hand-written Python programming problems testing code generation",
-    activeUntil: "Q4 2024",
-    inactiveReason: "Top models score 97%+, benchmark is effectively solved",
-  },
-  "arc-agi-1": {
-    name: "ARC-AGI-1", category: "Reasoning", status: "deprecated",
-    description: "Measures novel pattern recognition and abstraction",
-    activeUntil: "Q1 2025",
-    inactiveReason: "Replaced by ARC-AGI-2, with first submissions in Q1 2025",
-  },
-  "swe-bench": {
-    name: "SWE-bench Verified", category: "Coding", status: "saturated",
-    description: "Real GitHub issues from popular open-source Python repositories",
-    activeUntil: "Q3 2025",
-    inactiveReason: "Scores plateaued Q3 2025 due to known question-set ceiling; officially deprecated Feb 2026",
-  },
-  "frontiermath": {
-    name: "FrontierMath", category: "Math", status: "active",
-    description: "Research-level mathematics problems (Tiers 1-3)",
-  },
-  "math-l5": {
-    name: "MATH Level 5", category: "Math", status: "saturated",
-    description: "The hardest tier of the MATH benchmark",
-    activeUntil: "Q1 2025",
-    inactiveReason: "Top models score 96%+, even the hardest math tier is effectively solved",
-  },
-};
-
-const COST_BENCHMARK_META = {
-  gpqa: {
-    name: "GPQA Diamond", threshold: 36, thresholdLabel: "36%",
-    description: "Graduate-level science questions in physics, chemistry, and biology. Domain experts achieve ~65%; non-experts perform at chance. The cost threshold (36%) is set at what GPT-4 scored when the benchmark launched in late 2023.",
-    startQuarter: "Q4 2023",
-  },
-  "mmlu-pro": {
-    name: "MMLU-Pro", threshold: 73, thresholdLabel: "73%",
-    description: "A harder successor to MMLU with 10 answer choices (vs 4) across 14 academic subjects, designed to test genuine reasoning rather than recall. The cost threshold (73%) is set at what GPT-4o scored when the benchmark launched in mid-2024.",
-    startQuarter: "Q2 2024",
-  },
-  livecodebench: {
-    name: "LiveCodeBench", threshold: 29, thresholdLabel: "29%",
-    description: "Continuously-updated coding problems from competitive programming platforms, designed to resist data contamination. The cost threshold (29%) is set at what GPT-4 Turbo scored when the benchmark launched in early 2024.",
-    startQuarter: "Q1 2024",
-  },
-};
-
-// ─── Lifecycle helpers ──────────────────────────────────────
-
-function compareQuarters(a, b) {
-  const [qa, ya] = [parseInt(a[1]), parseInt(a.substring(3))];
-  const [qb, yb] = [parseInt(b[1]), parseInt(b.substring(3))];
-  return ya !== yb ? ya - yb : qa - qb;
-}
-
-function getFilterEndDate() {
-  return TIME_LABELS[TIME_LABELS.length - 1];
-}
-
-function isBenchmarkActive(benchKey, filterEndQuarter) {
-  const meta = BENCHMARK_META[benchKey];
-  if (!meta || !meta.activeUntil) return true;
-  return compareQuarters(filterEndQuarter, meta.activeUntil) < 0;
-}
 
 // ─── Data loading from Supabase ──────────────────────────────
 
