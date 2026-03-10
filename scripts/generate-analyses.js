@@ -429,7 +429,7 @@ function computeCostDecline(startIdx, endIdx) {
     if (decline >= 2.0) {
       declineLabel = `${decline}x`;
     } else if (declineRaw > 1.0) {
-      declineLabel = `${Math.round((declineRaw - 1) * 100)}%`;
+      declineLabel = `${Math.round((1 - 1 / declineRaw) * 100)}%`;
     } else {
       declineLabel = null;
     }
@@ -649,7 +649,7 @@ function buildCallouts(startIdx, endIdx, preset) {
     if (avgRounded >= 2.0) {
       aggLabel = `${avgRounded}x`;
     } else if (avgRaw > 1.0) {
-      aggLabel = `${Math.round((avgRaw - 1) * 100)}%`;
+      aggLabel = `${Math.round((1 - 1 / avgRaw) * 100)}%`;
     } else {
       aggLabel = null;
     }
