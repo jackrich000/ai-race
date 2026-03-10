@@ -84,8 +84,9 @@ const BENCHMARK_COLORS = {
 
 // Colors for cost benchmarks
 const COST_BENCHMARK_COLORS = {
-  gpqa:       "#06b6d4",
-  "mmlu-pro": "#a855f7",
+  gpqa:          "#06b6d4",
+  "mmlu-pro":    "#a855f7",
+  livecodebench: "#f59e0b",
 };
 
 // ─── Source helpers ──────────────────────────────────────────
@@ -1153,6 +1154,7 @@ function populateDateRangeYears() {
     // Skip single-quarter years (no meaningful change to show)
     const quartersInYear = TIME_LABELS.filter(q => q.endsWith(year));
     if (quartersInYear.length <= 1) continue;
+    if (parseInt(year) < 2024) continue;
     const opt = document.createElement("option");
     opt.value = year;
     opt.textContent = year;
@@ -1285,7 +1287,7 @@ function renderAnalysisCard(mode) {
       let changeText = "";
       if (l.direction && l.direction !== "unchanged" && l.startAvgRank !== null) {
         const dirWord = l.direction === "down" ? "improving from" : "worsening from";
-        changeText = `, ${dirWord} <span class="callout-num">${l.startAvgRank}</span> ${l.monthsBack} months ago`;
+        changeText = `, ${dirWord} <span class="callout-num">${l.startAvgRank}</span> ${l.periodLabel || l.monthsBack + " months ago"}`;
       }
       html += `<li class="callout-line"><span><span class="callout-obj">Overall Leader: ${escapeHtml(l.name)}</span> Avg. rank <span class="callout-num">${l.avgRank}</span> across ${l.benchmarkCount} active benchmarks${changeText}. <span class="callout-num">${l.firsts}</span> first-place finishes</span></li>`;
       plainParts.push(`Overall Leader: ${l.name}. Avg rank ${l.avgRank}. ${l.firsts} firsts`);
@@ -1294,10 +1296,16 @@ function renderAnalysisCard(mode) {
       const m = c.biggestMover;
       const dirWord = m.direction === "improved" ? "improving from" : "worsening from";
       const startRank = Math.round((m.avgRank - m.change) * 10) / 10;
-      html += `<li class="callout-line"><span><span class="callout-obj">Biggest mover: ${escapeHtml(m.name)}</span> Avg. rank <span class="callout-num">${m.avgRank}</span> across ${m.benchmarkCount || (c.leader ? c.leader.benchmarkCount : 6)} active benchmarks, ${dirWord} <span class="callout-num">${startRank}</span> ${m.monthsBack} months ago. <span class="callout-num">${m.firsts}</span> first-place finishes</span></li>`;
+      html += `<li class="callout-line"><span><span class="callout-obj">Biggest mover: ${escapeHtml(m.name)}</span> Avg. rank <span class="callout-num">${m.avgRank}</span> across ${m.benchmarkCount || (c.leader ? c.leader.benchmarkCount : 6)} active benchmarks, ${dirWord} <span class="callout-num">${startRank}</span> ${m.periodLabel || m.monthsBack + " months ago"}. <span class="callout-num">${m.firsts}</span> first-place finishes</span></li>`;
       plainParts.push(`Biggest mover: ${m.name}. Avg rank ${m.avgRank}, ${dirWord} ${startRank}`);
     }
   } else if (mode === "cost") {
+    if (data.aggregate) {
+      const a = data.aggregate;
+      const fellWord = a.decline.endsWith("x") ? "fell" : "fell by";
+      html += `<li class="callout-line"><span>Cost of intelligence ${fellWord} <span class="callout-num">${escapeHtml(a.decline)}</span> between ${escapeHtml(a.startQ)} and ${escapeHtml(a.endQ)}</span></li>`;
+      plainParts.push(`Cost of intelligence ${fellWord} ${a.decline} between ${a.startQ} and ${a.endQ}`);
+    }
     const fmtPrice = p => p >= 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(3)}`;
     for (const item of (data.callouts || [])) {
       html += `<li class="callout-line"><span><span class="callout-obj">${escapeHtml(item.benchmark)} (${escapeHtml(item.threshold)})</span>: <span class="callout-num">${escapeHtml(item.decline)}</span> cheaper now versus ${escapeHtml(item.startQ)} (${fmtPrice(item.startPrice)} \u2192 ${fmtPrice(item.endPrice)})</span></li>`;

@@ -110,8 +110,9 @@ const ARC_LAB_PATTERNS = MODEL_LAB_PATTERNS.map(([re, lab]) => [
 
 // Cost of Intelligence: benchmarks with price thresholds
 const COST_BENCHMARKS = {
-  gpqa:       { evalField: "gpqa",     threshold: 36, startQuarter: "Q4 2023" },
-  "mmlu-pro": { evalField: "mmlu_pro", threshold: 73, startQuarter: "Q2 2024" },
+  gpqa:          { evalField: "gpqa",          threshold: 36, startQuarter: "Q4 2023" },
+  "mmlu-pro":    { evalField: "mmlu_pro",      threshold: 73, startQuarter: "Q2 2024" },
+  livecodebench: { evalField: "livecodebench", threshold: 29, startQuarter: "Q1 2024" },
 };
 
 // Epoch: CSV files to process (AIME + ARC-AGI + SWE-bench for historical data)

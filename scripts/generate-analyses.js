@@ -135,6 +135,11 @@ const COST_BENCHMARK_META = {
     description: "A harder successor to MMLU with 10 answer choices (vs 4) across 14 academic subjects, designed to test genuine reasoning rather than recall. The cost threshold (73%) is set at what GPT-4o scored when the benchmark launched in mid-2024.",
     startQuarter: "Q2 2024",
   },
+  livecodebench: {
+    name: "LiveCodeBench", threshold: 29, thresholdLabel: "29%",
+    description: "Continuously-updated coding problems from competitive programming platforms, designed to resist data contamination. The cost threshold (29%) is set at what GPT-4 Turbo scored when the benchmark launched in early 2024.",
+    startQuarter: "Q1 2024",
+  },
 };
 
 // ─── Lifecycle helpers ──────────────────────────────────────
@@ -418,12 +423,22 @@ function computeCostDecline(startIdx, endIdx) {
       continue;
     }
 
-    const decline = Math.round((startEntry.price / endEntry.price) * 10) / 10;
+    const declineRaw = startEntry.price / endEntry.price;
+    const decline = Math.round(declineRaw * 10) / 10;
+    let declineLabel;
+    if (decline >= 2.0) {
+      declineLabel = `${decline}x`;
+    } else if (declineRaw > 1.0) {
+      declineLabel = `${Math.round((1 - 1 / declineRaw) * 100)}%`;
+    } else {
+      declineLabel = null;
+    }
     results.push({
       benchmark: meta.name,
       benchKey,
       threshold: meta.thresholdLabel,
-      decline: `${decline}x`,
+      decline: declineLabel,
+      declineRaw,
       startPrice: startEntry.price,
       endPrice: endEntry.price,
       startModel: startEntry.model,
@@ -525,6 +540,7 @@ function getPresets() {
     // Skip single-quarter years (e.g. 2026 with only Q1)
     const quartersInYear = TIME_LABELS.filter(q => q.endsWith(year));
     if (quartersInYear.length <= 1) continue;
+    if (parseInt(year) < 2024) continue;
     presets.push(year);
   }
 
@@ -533,7 +549,7 @@ function getPresets() {
 
 // ─── Build structured analysis JSON ──────────────────────────
 
-function buildCallouts(startIdx, endIdx) {
+function buildCallouts(startIdx, endIdx, preset) {
   // For frontier stats: use trailing 12-month window when range > 4 quarters
   const rangeQuarters = endIdx - startIdx;
   const frontierStartIdx = rangeQuarters > 4 ? Math.max(0, endIdx - 4) : startIdx;
@@ -559,7 +575,9 @@ function buildCallouts(startIdx, endIdx) {
 
   // Frontier callouts
   const frontierMonths = (endIdx - frontierStartIdx) * 3;
-  const periodSuffix = frontierMonths > 0 ? ` over the last ${frontierMonths} months` : "";
+  const isYearPreset = /^\d{4}$/.test(preset);
+  const periodSuffix = isYearPreset ? ` in ${preset}` : (frontierMonths > 0 ? ` over the last ${frontierMonths} months` : "");
+  const racePeriodLabel = isYearPreset ? `at start of ${preset}` : `${raceMonthsBack} months ago`;
   const frontier = {
     callouts: {
       medianIncrease: {
@@ -569,7 +587,7 @@ function buildCallouts(startIdx, endIdx) {
       },
     },
   };
-  if (frontierGrowth.biggestMover) {
+  if (frontierGrowth.biggestMover && frontierGrowth.biggestMover.ppChange !== 0) {
     const bm = frontierGrowth.biggestMover;
     frontier.callouts.biggestMover = {
       name: bm.benchmark,
@@ -599,6 +617,7 @@ function buildCallouts(startIdx, endIdx) {
       startAvgRank: l.startAvgRank,
       direction,
       monthsBack: raceMonthsBack,
+      periodLabel: racePeriodLabel,
     };
   }
   if (rankings.biggestMover) {
@@ -613,12 +632,41 @@ function buildCallouts(startIdx, endIdx) {
       firsts: m.endFirsts,
       benchmarkCount: rankings.leader ? rankings.leader.benchmarksRanked : m.benchmarksRanked,
       monthsBack: raceMonthsBack,
+      periodLabel: racePeriodLabel,
     };
   }
 
   // Cost callouts
+  const validCostItems = costDecline.filter(c => c.decline !== null);
+
+  // Aggregate cost decline: average of declineRaw values where > 1.0
+  let aggregate = null;
+  const validDeclines = costDecline.filter(c => c.declineRaw > 1.0);
+  if (validDeclines.length > 0) {
+    const avgRaw = validDeclines.reduce((sum, c) => sum + c.declineRaw, 0) / validDeclines.length;
+    const avgRounded = Math.round(avgRaw * 10) / 10;
+    let aggLabel;
+    if (avgRounded >= 2.0) {
+      aggLabel = `${avgRounded}x`;
+    } else if (avgRaw > 1.0) {
+      aggLabel = `${Math.round((1 - 1 / avgRaw) * 100)}%`;
+    } else {
+      aggLabel = null;
+    }
+    if (aggLabel) {
+      const allStartQs = validDeclines.map(c => c.startQ).sort(compareQuarters);
+      const allEndQs = validDeclines.map(c => c.endQ).sort(compareQuarters);
+      aggregate = {
+        decline: aggLabel,
+        startQ: allStartQs[0],
+        endQ: allEndQs[allEndQs.length - 1],
+      };
+    }
+  }
+
   const cost = {
-    callouts: costDecline.filter(c => c.decline !== null),
+    callouts: validCostItems,
+    aggregate,
     explanation: "Shows the cheapest model (any lab) scoring above a fixed threshold on each benchmark, measured in $/M tokens (blended 3:1 input:output). Thresholds are set at what the best model scored when each benchmark launched.",
   };
 
@@ -630,7 +678,7 @@ async function generateAnalysis(preset) {
   const startQ = TIME_LABELS[startIdx];
   const endQ = TIME_LABELS[endIdx];
 
-  const callouts = buildCallouts(startIdx, endIdx);
+  const callouts = buildCallouts(startIdx, endIdx, preset);
   const perQuarterFrontier = computePerQuarterFrontier(startIdx, endIdx);
   const freshness = computeDataFreshness(endIdx);
   const benchmarkData = getDataForRange(startIdx, endIdx);
