@@ -709,6 +709,7 @@ function renderChart() {
           display: false, // we use a custom HTML legend
         },
         tooltip: {
+          enabled: window.innerWidth > 640,
           backgroundColor: "#1a1d27",
           titleColor: "#e8eaed",
           bodyColor: "#9aa0a6",
@@ -768,8 +769,9 @@ function renderCustomLegend() {
     container.appendChild(btn);
   });
 
-  // Inactive section (only in frontier mode)
-  if (inactiveItems.length > 0 && currentMode === "frontier") {
+  // Inactive section (only in frontier mode, hidden on mobile)
+  const isMobile = window.innerWidth <= 640;
+  if (inactiveItems.length > 0 && currentMode === "frontier" && !isMobile) {
     const divider = document.createElement("div");
     divider.className = "legend-divider";
     container.appendChild(divider);

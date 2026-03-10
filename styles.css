@@ -694,4 +694,25 @@ footer {
   .filter-pill { font-size: 0.75rem; padding: 0.35rem 0.75rem; }
   .filter-pills { gap: 0.35rem; }
   .analysis-card { padding: 0.75rem 1rem; }
+
+  /* Legend: tighter spacing, less clearance for action buttons */
+  .chart-legend { gap: 0.15rem 0.5rem; padding-right: 40px; padding-bottom: 0.5rem; }
+
+  /* Smaller action buttons to free legend space */
+  .chart-action-btn { padding: 0.2rem; }
+  .chart-action-btn svg { width: 14px; height: 14px; }
+
+  /* Touch target improvements */
+  .mode-btn { padding: 0.5rem 0.75rem; font-size: 0.8rem; }
+  .legend-item { padding: 0.3rem 0.35rem; }
+  .benchmark-item-header { padding: 0.75rem 0; }
+  .copy-icon-btn { padding: 0.4rem; }
+
+  /* Typography: bump smallest sizes for readability */
+  .status-badge { font-size: 0.7rem; }
+
+  /* Overflow protection */
+  .chart-citation { flex-wrap: wrap; }
+  footer { flex-wrap: wrap; }
+  .benchmark-item-detail { padding-left: 0.5rem; }
 }
