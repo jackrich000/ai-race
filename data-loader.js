@@ -152,6 +152,12 @@ const COST_BENCHMARK_META = {
     link: "https://arxiv.org/abs/2406.01574",
     color: "#a855f7", startQuarter: "Q2 2024",
   },
+  livecodebench: {
+    name: "LiveCodeBench", threshold: 29, thresholdLabel: "29%",
+    description: "Continuously-updated coding benchmark sourced from competitive programming platforms. New problems added regularly to prevent data contamination. The cost threshold (29%) is set at what GPT-4 Turbo scored when the benchmark launched in early 2024. Pricing data from Artificial Analysis.",
+    link: "https://livecodebench.github.io/",
+    color: "#f59e0b", startQuarter: "Q1 2024",
+  },
 };
 
 // ─── Data loading ───────────────────────────────────────────────
