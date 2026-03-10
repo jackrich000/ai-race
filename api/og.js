@@ -7,7 +7,7 @@ export default function handler() {
     { name: "OpenAI", color: "#10a37f" },
     { name: "Anthropic", color: "#d4a574" },
     { name: "Google", color: "#4285f4" },
-    { name: "xAI", color: "#ef4444" },
+    { name: "xAI", color: "#f97316" }, // source of truth: lib/config.js LABS
     { name: "Chinese Labs", color: "#a855f7" },
   ];
 

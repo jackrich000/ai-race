@@ -42,6 +42,8 @@ const SOURCE_DISPLAY_MAP = {
 const CHART_DPR = 3;
 const INACTIVE_COLOR = "#4b5563";       // grey-600
 const INACTIVE_BORDER_WIDTH = 1.5;      // thinner than active (2.5)
+const MOBILE_BREAKPOINT = 640;
+const GRID_COLOR = "rgba(45, 49, 64, 0.5)";
 
 // Compute Chart.js font size scaled to viewport width (independent of browser zoom).
 // Scales from 1x at ≤960px to 1.25x at 2560px+, matching the CSS clamp() growth.
@@ -623,7 +625,7 @@ function renderChart() {
     ? {
         type: "logarithmic",
         title: { display: true, text: "$/M tokens", color: "#808690", font: { size: chartFontSize(11) }, padding: { top: 0, bottom: 0 } },
-        grid: { color: "rgba(45, 49, 64, 0.5)" },
+        grid: { color: GRID_COLOR },
         ticks: {
           color: "#808690",
           font: { size: chartFontSize(11) },
@@ -639,7 +641,7 @@ function renderChart() {
     : {
         min: 0,
         max: 100,
-        grid: { color: "rgba(45, 49, 64, 0.5)" },
+        grid: { color: GRID_COLOR },
         ticks: {
           color: "#808690",
           font: { size: chartFontSize(11) },
@@ -709,7 +711,7 @@ function renderChart() {
           display: false, // we use a custom HTML legend
         },
         tooltip: {
-          enabled: window.innerWidth > 640,
+          enabled: window.innerWidth > MOBILE_BREAKPOINT,
           backgroundColor: "#1a1d27",
           titleColor: "#e8eaed",
           bodyColor: "#9aa0a6",
@@ -727,7 +729,7 @@ function renderChart() {
       },
       scales: {
         x: {
-          grid: { color: "rgba(45, 49, 64, 0.5)" },
+          grid: { color: GRID_COLOR },
           ticks: { color: "#808690", font: { size: chartFontSize(11) } },
           min: dateBounds.startLabel || undefined,
           max: dateBounds.endLabel || undefined,
@@ -770,7 +772,7 @@ function renderCustomLegend() {
   });
 
   // Inactive section (only in frontier mode, hidden on mobile)
-  const isMobile = window.innerWidth <= 640;
+  const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
   if (inactiveItems.length > 0 && currentMode === "frontier" && !isMobile) {
     const divider = document.createElement("div");
     divider.className = "legend-divider";
