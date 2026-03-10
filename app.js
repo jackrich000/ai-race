@@ -44,10 +44,10 @@ const INACTIVE_COLOR = "#4b5563";       // grey-600
 const INACTIVE_BORDER_WIDTH = 1.5;      // thinner than active (2.5)
 
 // Compute Chart.js font size scaled to viewport width (independent of browser zoom).
-// Scales from 1x at ≤960px to 1.35x at 2560px+, matching the CSS clamp() growth.
+// Scales from 1x at ≤960px to 1.25x at 2560px+, matching the CSS clamp() growth.
 function chartFontSize(base) {
   const vw = window.innerWidth;
-  const scale = Math.min(1.35, Math.max(1, 1 + (vw - 960) * 0.35 / 1600));
+  const scale = Math.min(1.25, Math.max(1, 1 + (vw - 960) * 0.25 / 1600));
   return Math.round(base * scale);
 }
 
@@ -1397,7 +1397,7 @@ function buildExportCanvas() {
   const sourceCanvas = document.getElementById("benchmarkChart");
   const chartW = sourceCanvas.width;
   const chartH = sourceCanvas.height;
-  const exportScale = Math.min(1.35, Math.max(1, 1 + (window.innerWidth - 960) * 0.35 / 1600));
+  const exportScale = Math.min(1.25, Math.max(1, 1 + (window.innerWidth - 960) * 0.25 / 1600));
   const pad = Math.round(16 * CHART_DPR * exportScale);
   const rowH = Math.round(30 * CHART_DPR * exportScale);
   const citationH = Math.round(36 * CHART_DPR * exportScale);
