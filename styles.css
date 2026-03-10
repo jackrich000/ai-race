@@ -666,10 +666,25 @@ main {
 
 /* Footer */
 footer {
-  text-align: center;
-  padding: 1.5rem;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1.5rem 2rem;
   color: var(--text-muted);
   font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.footer-linkedin {
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.2s;
+}
+
+.footer-linkedin:hover {
+  color: var(--text-secondary);
 }
 
 /* Responsive */
