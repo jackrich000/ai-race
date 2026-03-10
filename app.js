@@ -1302,8 +1302,9 @@ function renderAnalysisCard(mode) {
   } else if (mode === "cost") {
     if (data.aggregate) {
       const a = data.aggregate;
-      html += `<li class="callout-line"><span>Cost of intelligence fell by <span class="callout-num">${escapeHtml(a.decline)}</span> between ${escapeHtml(a.startQ)} and ${escapeHtml(a.endQ)}</span></li>`;
-      plainParts.push(`Cost of intelligence fell by ${a.decline} between ${a.startQ} and ${a.endQ}`);
+      const fellWord = a.decline.endsWith("x") ? "fell" : "fell by";
+      html += `<li class="callout-line"><span>Cost of intelligence ${fellWord} <span class="callout-num">${escapeHtml(a.decline)}</span> between ${escapeHtml(a.startQ)} and ${escapeHtml(a.endQ)}</span></li>`;
+      plainParts.push(`Cost of intelligence ${fellWord} ${a.decline} between ${a.startQ} and ${a.endQ}`);
     }
     const fmtPrice = p => p >= 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(3)}`;
     for (const item of (data.callouts || [])) {
