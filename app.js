@@ -76,7 +76,7 @@ const BENCHMARK_COLORS = {
   "hle":           "#8b5cf6",
   "gpqa":          "#06b6d4",
   "aime":          "#ef4444",
-  "swe-bench-pro": "#34d399",
+  "swe-bench-pro": "#2dd4bf",
   "humaneval":     "#6ee7b7",
   "frontiermath":  "#f472b6",
   "math-l5":       "#fb7185",
@@ -614,10 +614,10 @@ function renderChart() {
   const yScale = isCost
     ? {
         type: "logarithmic",
-        title: { display: true, text: "$/M tokens", color: "#5f6368", font: { size: 11 }, padding: { top: 0, bottom: 0 } },
+        title: { display: true, text: "$/M tokens", color: "#808690", font: { size: 11 }, padding: { top: 0, bottom: 0 } },
         grid: { color: "rgba(45, 49, 64, 0.5)" },
         ticks: {
-          color: "#5f6368",
+          color: "#808690",
           font: { size: 11 },
           callback: val => {
             // Only show powers of 10 (e.g. $0.01, $0.10, $1, $10)
@@ -633,7 +633,7 @@ function renderChart() {
         max: 100,
         grid: { color: "rgba(45, 49, 64, 0.5)" },
         ticks: {
-          color: "#5f6368",
+          color: "#808690",
           font: { size: 11 },
           callback: val => val + "%",
         },
@@ -717,7 +717,7 @@ function renderChart() {
       scales: {
         x: {
           grid: { color: "rgba(45, 49, 64, 0.5)" },
-          ticks: { color: "#5f6368", font: { size: 11 } },
+          ticks: { color: "#808690", font: { size: 11 } },
           min: dateBounds.startLabel || undefined,
           max: dateBounds.endLabel || undefined,
         },
@@ -1385,9 +1385,21 @@ function buildExportCanvas() {
   const sourceCanvas = document.getElementById("benchmarkChart");
   const chartW = sourceCanvas.width;
   const chartH = sourceCanvas.height;
-  const pad = 24 * CHART_DPR;
-  const legendH = 32 * CHART_DPR;
+  const pad = 16 * CHART_DPR;
+  const rowH = 30 * CHART_DPR;
   const citationH = 36 * CHART_DPR;
+
+  // Determine legend layout
+  const visibleDatasets = chart.data.datasets
+    .map((ds, i) => ({ ds, idx: i }))
+    .filter(({ idx }) => chart.isDatasetVisible(idx));
+  const activeDs = visibleDatasets.filter(({ ds }) => !ds._isInactive);
+  const inactiveDs = visibleDatasets.filter(({ ds }) => ds._isInactive);
+  const hasInactiveRow = inactiveDs.length > 0 && currentMode === "frontier";
+  const dividerGap = 6 * CHART_DPR;
+  const legendBottomPad = 16 * CHART_DPR;
+  const legendH = (hasInactiveRow ? rowH * 2 + dividerGap : rowH) + legendBottomPad;
+
   const totalW = chartW + pad * 2;
   const totalH = chartH + pad + legendH + citationH;
 
@@ -1400,36 +1412,29 @@ function buildExportCanvas() {
   ctx.fillStyle = "#0f1117";
   ctx.fillRect(0, 0, totalW, totalH);
 
-  // Draw legend row at top — mirror the on-screen layout (active, then defeated section)
-  const visibleDatasets = chart.data.datasets
-    .map((ds, i) => ({ ds, idx: i }))
-    .filter(({ idx }) => chart.isDatasetVisible(idx));
-  const activeDs = visibleDatasets.filter(({ ds }) => !ds._isInactive);
-  const inactiveDs = visibleDatasets.filter(({ ds }) => ds._isInactive);
-
-  const fontSize = 10 * CHART_DPR;
-  const smallFontSize = 8 * CHART_DPR;
-  ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-
-  let legendX = pad;
-  const legendY = pad + legendH * 0.6;
+  const fontSize = 12 * CHART_DPR;
+  const smallFontSize = 10 * CHART_DPR;
   const dotR = 4 * CHART_DPR;
+  const dotTextGap = 6 * CHART_DPR;
   const itemGap = 16 * CHART_DPR;
   const maxLegendX = totalW - pad;
 
+  let legendX = pad;
+  let legendY = pad + rowH * 0.6;
+
   function drawLegendItem(ds, textColor) {
-    // Use original color if this benchmark is isolated, otherwise grey for inactive
     const isIsolated = isolatedIndex === chart.data.datasets.indexOf(ds);
     const color = (ds._isInactive && !isIsolated) ? INACTIVE_COLOR : (BENCHMARK_COLORS[ds._benchKey] || ds.borderColor);
+    ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     const labelWidth = ctx.measureText(ds.label).width;
-    const itemWidth = dotR * 2 + 4 * CHART_DPR + labelWidth + itemGap;
+    const itemWidth = dotR * 2 + dotTextGap + labelWidth + itemGap;
     if (legendX + itemWidth > maxLegendX) return;
 
     ctx.beginPath();
     ctx.arc(legendX + dotR, legendY, dotR, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.fill();
-    legendX += dotR * 2 + 4 * CHART_DPR;
+    legendX += dotR * 2 + dotTextGap;
 
     ctx.fillStyle = textColor;
     ctx.textAlign = "left";
@@ -1437,22 +1442,33 @@ function buildExportCanvas() {
     legendX += labelWidth + itemGap;
   }
 
-  // Active items
+  // Row 1: Active items
   for (const { ds } of activeDs) drawLegendItem(ds, "#9aa0a6");
 
-  // Defeated section (frontier mode only)
-  if (inactiveDs.length > 0 && currentMode === "frontier") {
-    const sectionLabel = "MAJOR ~DEFEATED";
+  // Row 2: Defeated section (frontier mode only)
+  if (hasInactiveRow) {
+    // Divider line
+    const dividerY = pad + rowH + dividerGap * 0.5;
+    ctx.strokeStyle = "#2d3140";
+    ctx.lineWidth = CHART_DPR;
+    ctx.beginPath();
+    ctx.moveTo(pad, dividerY);
+    ctx.lineTo(totalW - pad, dividerY);
+    ctx.stroke();
+
+    // Move to row 2
+    legendX = pad;
+    legendY = pad + rowH + dividerGap + rowH * 0.6;
+
+    const sectionLabel = "MAJOR BENCHMARKS ~DEFEATED";
     ctx.font = `bold ${smallFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     const sectionWidth = ctx.measureText(sectionLabel).width + itemGap;
-    if (legendX + sectionWidth <= maxLegendX) {
-      ctx.fillStyle = "#5f6368";
-      ctx.textAlign = "left";
-      ctx.fillText(sectionLabel, legendX, legendY + smallFontSize * 0.35);
-      legendX += sectionWidth;
-    }
-    ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-    for (const { ds } of inactiveDs) drawLegendItem(ds, "#6b7280");
+    ctx.fillStyle = "#808690";
+    ctx.textAlign = "left";
+    ctx.fillText(sectionLabel, legendX, legendY + smallFontSize * 0.35);
+    legendX += sectionWidth;
+
+    for (const { ds } of inactiveDs) drawLegendItem(ds, "#9aa0a6");
   }
 
   // Chart image
@@ -1460,8 +1476,8 @@ function buildExportCanvas() {
 
   // Citation footer
   const citationY = totalH - citationH * 0.35;
-  ctx.fillStyle = "#5f6368";
-  ctx.font = `${10 * CHART_DPR}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  ctx.fillStyle = "#808690";
+  ctx.font = `${11 * CHART_DPR}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
   ctx.textAlign = "left";
   ctx.fillText(SITE_URL, pad, citationY);
   ctx.textAlign = "right";

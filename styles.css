@@ -11,7 +11,7 @@
   --bg-tertiary: #242836;
   --text-primary: #e8eaed;
   --text-secondary: #9aa0a6;
-  --text-muted: #5f6368;
+  --text-muted: #808690;
   --border: #2d3140;
   --accent: #6c9eff;
   --accent-dim: rgba(108, 158, 255, 0.15);
@@ -187,7 +187,7 @@ main {
   align-items: center;
   justify-content: flex-end;
   gap: 0.35rem;
-  padding-top: 0.5rem;
+  padding-top: 0.75rem;
   font-size: 0.7rem;
   color: var(--text-muted);
   flex-shrink: 0;

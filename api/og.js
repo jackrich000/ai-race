@@ -166,7 +166,7 @@ export default function handler() {
               style: {
                 position: "absolute",
                 bottom: "40px",
-                color: "#5f6368",
+                color: "#808690",
                 fontSize: "20px",
               },
               children: "ai-race.vercel.app",

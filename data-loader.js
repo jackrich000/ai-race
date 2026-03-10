@@ -27,7 +27,7 @@ const LABS = {
   openai:    { name: "OpenAI",          color: "#10a37f" },
   anthropic: { name: "Anthropic",       color: "#d4a574" },
   google:    { name: "Google DeepMind", color: "#4285f4" },
-  xai:       { name: "xAI",            color: "#ef4444" },
+  xai:       { name: "xAI",            color: "#f97316" },
   chinese:   { name: "Chinese Leaders", color: "#a855f7" },
 };
 
