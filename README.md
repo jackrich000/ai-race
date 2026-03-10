@@ -1,10 +1,10 @@
 # The AI Race
 
-Up-to-date charts tracking frontier AI model performance across leading benchmarks over time.
+There are great sites tracking which AI models lead today, and good periodic reports on historic progress. But nothing that gives you an up-to-date view of AI progress over time, across a wide range of quality benchmarks. The AI Race tries to fill that gap.
 
 **Live site:** [ai-race.vercel.app](https://ai-race.vercel.app/)
 
-Tracks 5 labs (OpenAI, Anthropic, Google DeepMind, xAI, Chinese Leaders) across 10 benchmarks in three views: AI Frontier (best score across all labs), Lab Race (per-lab comparison), and Cost of Intelligence (cheapest model above a quality threshold).
+Tracks 5 labs (OpenAI, Anthropic, Google DeepMind, xAI, Chinese Leaders) across 10 benchmarks in three views: AI Frontier (best score across all labs), Lab Race (per-lab comparison), and Cost of Intelligence (cheapest model above a quality threshold). Data is sourced from Epoch AI, Artificial Analysis, ARC Prize, SWE-bench, Scale AI SEAL, and official model cards.
 
 ## Tech stack
 
