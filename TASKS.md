@@ -35,7 +35,7 @@ Minimum viable launch. Organized into waves for parallel execution.
 - [x] **Refine AI analysis prompt & UI** — Rearchitected: structured stat cards (code-computed) + LLM headlines/commentary (JSON). Mode-specific rendering, trailing 12-month window, unified info area, single-quarter presets filtered. All 7 presets regenerated. PR #18.
 - [x] **QA generated analyses across all presets** — Reviewed all 6 presets x 3 modes. Fixed: dropped 2023 (too sparse), cost decline % formula, aggregate cost stat, period labels for year presets, 0pp suppression, LiveCodeBench as third cost benchmark, frontier prompt (analysis over description), benchmark pluralization, simplified cost callout to aggregate only. PR #19 + direct master fixes.
 - [ ] **Code cleanliness review & refactor** — Review codebase, refactor where valuable.
-- [ ] **Add contact / author details** — Add links to Jack's Substack and LinkedIn somewhere on the site, so visitors can reach out if it gets traction. Keep it subtle (e.g. footer or small "by" line).
+- [x] **Add contact / author details** — Left-aligned footer: "By Jack Richardson [LinkedIn icon] & Claude Code". Substack link to be added later once content exists.
 - [ ] **Write LinkedIn post to announce site**
 
 ---
