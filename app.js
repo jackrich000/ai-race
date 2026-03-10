@@ -1277,7 +1277,8 @@ function renderAnalysisCard(mode) {
       plainParts.push(`Biggest gain: ${c.biggestMover.name}, ${pp >= 0 ? "+" : ""}${pp} pp`);
     }
     if (c.benchmarksSaturated) {
-      html += `<li class="callout-line"><span><span class="callout-num">${c.benchmarksSaturated.count}</span> <span class="callout-obj">major benchmarks defeated</span>: ${escapeHtml(c.benchmarksSaturated.names.join(", "))}</span></li>`;
+      const benchWord = c.benchmarksSaturated.count === 1 ? "benchmark" : "benchmarks";
+      html += `<li class="callout-line"><span><span class="callout-num">${c.benchmarksSaturated.count}</span> <span class="callout-obj">major ${benchWord} defeated</span>: ${escapeHtml(c.benchmarksSaturated.names.join(", "))}</span></li>`;
       plainParts.push(`${c.benchmarksSaturated.count} defeated: ${c.benchmarksSaturated.names.join(", ")}`);
     }
   } else if (mode === "race") {
@@ -1303,13 +1304,8 @@ function renderAnalysisCard(mode) {
     if (data.aggregate) {
       const a = data.aggregate;
       const fellWord = a.decline.endsWith("x") ? "fell" : "fell by";
-      html += `<li class="callout-line"><span>Cost of intelligence ${fellWord} <span class="callout-num">${escapeHtml(a.decline)}</span> between ${escapeHtml(a.startQ)} and ${escapeHtml(a.endQ)}</span></li>`;
+      html += `<li class="callout-line"><span><span class="callout-obj">Cost of intelligence ${fellWord}</span> <span class="callout-num">${escapeHtml(a.decline)}</span> between ${escapeHtml(a.startQ)} and ${escapeHtml(a.endQ)}</span></li>`;
       plainParts.push(`Cost of intelligence ${fellWord} ${a.decline} between ${a.startQ} and ${a.endQ}`);
-    }
-    const fmtPrice = p => p >= 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(3)}`;
-    for (const item of (data.callouts || [])) {
-      html += `<li class="callout-line"><span><span class="callout-obj">${escapeHtml(item.benchmark)} (${escapeHtml(item.threshold)})</span>: <span class="callout-num">${escapeHtml(item.decline)}</span> cheaper now versus ${escapeHtml(item.startQ)} (${fmtPrice(item.startPrice)} \u2192 ${fmtPrice(item.endPrice)})</span></li>`;
-      plainParts.push(`${item.benchmark}: ${item.decline} cheaper now vs ${item.startQ} (${fmtPrice(item.startPrice)} → ${fmtPrice(item.endPrice)})`);
     }
   }
   html += '</ul>';
