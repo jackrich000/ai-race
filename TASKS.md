@@ -5,59 +5,49 @@
 
 ---
 
-## Launch Scope
+## Archive: Launch (Complete)
 
-Minimum viable launch. Organized into waves for parallel execution.
-
-### Wave 1 — Start first, all independent
-
-- [x] **Data accuracy deep dive** — Check all data points against official external sources. Think through where users might challenge the numbers.
-- [x] **OG meta tags + site copy review** *(single worktree)* — Add og:title, og:description, og:image for good LinkedIn/X previews. Review and refine all site copy to align around purpose: easy, reliable, up-to-date view of AI model progress for consultants/employees building slides. Do copy first since OG description should match.
-- [x] **Chart image export / copy button** — High quality image export so users can paste charts directly into slides.
-- [x] **Simple analytics** — Vercel Web Analytics (cookieless, GDPR compliant, no consent banner needed). Enabled in dashboard + script tag in index.html.
-
-### Wave 2 — After Wave 1 merges
-
-- [x] **Review recent PRs (benchmark lifecycle + LLM analysis)** — Detailed review of PRs #11 and #12. Three focus areas: (1) Review LLM analysis prompt and output quality in detail, (2) Think through deprecation/saturation logic and how it's labelled in the UI, (3) Retest copy-to-clipboard and image export to verify they work correctly after the benchmark lifecycle changes.
-- [x] **Unified date filter** *(single worktree)* — Single date filter controls both chart view and AI analysis. Remove the "generate analysis" button entirely. Chart updates and analysis auto-generates for selected period. **Also:** add rate limiting + response caching on `/api/analyze`; redesign analysis panel — copy icon (not text button, match chart style with green flash), headlines-first layout with individual copy buttons per headline.
-- [x] **Error / loading states** — Handle Supabase slowness or API failures gracefully. A blank chart or crash kills trust.
-
-### Wave 3 — Data completeness
-
-- [x] **Verified/unverified data tier** — Added `verified` column, `benchmark_raw` audit table, model card ingestion (GPT-5.4, Claude Sonnet/Opus 4.6, Gemini Deep Think/3.1 Pro) with per-entry `matchVerified` regex filtering against verified sources. Hollow dots for unverified, source attribution in tooltips. Currently 2 unverified entries survive: HLE Google (Deep Think), SWE-bench Pro OpenAI (GPT-5.4).
-- [x] **Benchmark expansion** — Added FrontierMath (active, research-level math from Epoch AI, ~25-50% range) and MATH Level 5 (saturated, hardest MATH tier, 23%→98% over 2023-2025). Both sourced from Epoch AI CSVs — config-only changes, no new ingestion code. Full data refresh across all benchmarks completed. Now tracking 7 active + 4 inactive benchmarks.
-- [x] **In-chart citation & source attribution** — Dynamic citation line (right-aligned, sources update per view), info button linking to methodology section, per-point source attribution in tooltips, methodology intro explaining verified/unverified, analysis disclaimer, export canvas uses dynamic sources. Also: benchmark descriptions rewritten (conversational, source-aware), SWE-bench Pro renamed to "(Public)", math benchmarks grouped at bottom of active list.
-
-### Wave 4 — Final polish before launch
-
-- [x] **Security audit** — Full audit: git history secret scan (clean), Supabase RLS verified (read-only), path traversal fix, SRI on CDN scripts, security headers (CSP, HSTS, X-Frame-Options, etc.), XSS escaping gaps closed. PR #20.
-- [x] **Design, accessibility & responsiveness review** — Colorblind-safe colors, WCAG AA contrast, fluid desktop scaling (clamp root font-size 1rem-1.25rem, 1200px container, Chart.js/export font scaling). Mobile UX: hidden inactive legend, disabled tooltips, tighter legend, larger chart, touch targets, overflow protection.
-- [x] **Refine AI analysis prompt & UI** — Rearchitected: structured stat cards (code-computed) + LLM headlines/commentary (JSON). Mode-specific rendering, trailing 12-month window, unified info area, single-quarter presets filtered. All 7 presets regenerated. PR #18.
-- [x] **QA generated analyses across all presets** — Reviewed all 6 presets x 3 modes. Fixed: dropped 2023 (too sparse), cost decline % formula, aggregate cost stat, period labels for year presets, 0pp suppression, LiveCodeBench as third cost benchmark, frontier prompt (analysis over description), benchmark pluralization, simplified cost callout to aggregate only. PR #19 + direct master fixes.
-- [x] **Code cleanliness review & refactor** — Extracted shared config to `lib/config.js` (labs, benchmarks, time helpers), removed ~150 lines of duplication across 4 files, fixed og.js xAI color bug, extracted app.js magic values to named constants, deleted dead `data.js`, added README.md.
-- [x] **Add contact / author details** — Left-aligned footer: "By Jack Richardson [LinkedIn icon] & Claude Code". Substack link to be added later once content exists.
-- [x] **Write LinkedIn post to announce site**
+Waves 1-4 shipped. See git history for details.
 
 ---
 
 ## Backlog
 
-Deferred — good ideas, not needed for launch.
-
-- [~] **Research additional benchmarks** — Superseded by Wave 3 benchmark expansion task.
 - [ ] **Rethink aggregate view on Lab Race tab** — Hard to get a sense of who is really ahead when data is spread across 6 benchmark tabs. Need a way to show the overall picture.
 - [ ] **Differentiated branding / visual identity** — Come up with branding that could extend across apps, blog, slides. Opportunity to define a reusable visual identity. Explore testing the [frontend-design skill](https://github.com/anthropics/skills/blob/main/skills/frontend-design/SKILL.md) for this.
-- [x] **Redesign Cost Intelligence tab** — Tackled alongside other tasks (structured stat cards, aggregate cost callout, powers-of-10 Y-axis, legend click-to-isolate).
-- [x] **Add older saturated benchmarks** — Implemented as benchmark lifecycle system: 5 active + 3 inactive (HumanEval saturated, ARC-AGI-1 deprecated, SWE-bench Verified deprecated). Grey dashed lines with hover-to-highlight and custom tooltips. Also added SWE-bench Pro as active replacement.
 - [ ] **Set up scheduled data refresh** — Decide frequency (daily vs weekly) based on source update cadence. Automate the ingestion script.
 - [ ] **Automate model card data collection** — Currently MODEL_CARD_DATA is manually curated by reading lab blog posts. Explore browser-use MCP tools (e.g. Playwright MCP, browser-use) to give Claude access to view model card pages and extract benchmark scores directly from official lab announcements. Would eliminate the manual step of reading images/tables and transcribing numbers. Key challenge: scores are often in images/infographics, not structured text.
 - [ ] **Add test suite for data pipeline** — Unit tests for cumulative-best computation, quarter generation, verified/unverified filtering, and config consistency checks.
 - [ ] **Explore efficient manual benchmark entry** — MMMU/MMMU-Pro (multimodal) and OSWorld (computer use) would broaden capability coverage but lack automated data sources. Investigate lightweight manual entry workflows.
-- [ ] **Non-percentage benchmark visualizations** — Design a way to display benchmarks with non-% scoring (Elo, minutes, percentile). Candidates: METR Time Horizons (autonomous task duration — all major labs, run by METR/Epoch AI), GDPval (economic value — Elo-based, on Artificial Analysis), Codeforces / LiveCodeBench Pro (competitive coding — Elo-based). Requires a different chart type or normalization approach. Would unlock some of the most important agentic and economic benchmarks.
+- [ ] **Non-percentage benchmark visualizations** — Design a way to display benchmarks with non-% scoring (Elo, minutes, percentile). Candidates: METR Time Horizons, GDPval, Codeforces / LiveCodeBench Pro. Requires a different chart type or normalization approach.
 
 ---
 
 ## Done
+
+### Launch
+
+- [x] **Data accuracy deep dive**
+- [x] **OG meta tags + site copy review**
+- [x] **Chart image export / copy button**
+- [x] **Simple analytics**
+- [x] **Review recent PRs (benchmark lifecycle + LLM analysis)**
+- [x] **Unified date filter**
+- [x] **Error / loading states**
+- [x] **Verified/unverified data tier**
+- [x] **Benchmark expansion** — FrontierMath + MATH Level 5
+- [x] **In-chart citation & source attribution**
+- [x] **Security audit** (PR #20)
+- [x] **Design, accessibility & responsiveness review**
+- [x] **Refine AI analysis prompt & UI** (PR #18)
+- [x] **QA generated analyses across all presets** (PR #19)
+- [x] **Code cleanliness review & refactor**
+- [x] **Add contact / author details**
+- [x] **Write LinkedIn post to announce site**
+- [x] **Redesign Cost Intelligence tab**
+- [x] **Add older saturated benchmarks**
+
+### Other
 
 - [x] Fix spacing between AI analysis and benchmark description (2026-03-04)
 - [x] Add favicon (2026-03-04)
@@ -68,3 +58,4 @@ Deferred — good ideas, not needed for launch.
 ## Killed
 
 - [~] Add best 'Open Source' line
+- [~] Research additional benchmarks — Superseded by Wave 3 benchmark expansion task.
