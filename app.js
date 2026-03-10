@@ -43,6 +43,14 @@ const CHART_DPR = 3;
 const INACTIVE_COLOR = "#4b5563";       // grey-600
 const INACTIVE_BORDER_WIDTH = 1.5;      // thinner than active (2.5)
 
+// Compute Chart.js font size scaled to viewport width (independent of browser zoom).
+// Scales from 1x at ≤960px to 1.35x at 2560px+, matching the CSS clamp() growth.
+function chartFontSize(base) {
+  const vw = window.innerWidth;
+  const scale = Math.min(1.35, Math.max(1, 1 + (vw - 960) * 0.35 / 1600));
+  return Math.round(base * scale);
+}
+
 // ─── State ───────────────────────────────────────────────────
 let currentBenchmark = null; // Set to first benchmark key on init
 let currentMode = "frontier"; // "frontier" | "race" | "cost"
@@ -614,11 +622,11 @@ function renderChart() {
   const yScale = isCost
     ? {
         type: "logarithmic",
-        title: { display: true, text: "$/M tokens", color: "#808690", font: { size: 11 }, padding: { top: 0, bottom: 0 } },
+        title: { display: true, text: "$/M tokens", color: "#808690", font: { size: chartFontSize(11) }, padding: { top: 0, bottom: 0 } },
         grid: { color: "rgba(45, 49, 64, 0.5)" },
         ticks: {
           color: "#808690",
-          font: { size: 11 },
+          font: { size: chartFontSize(11) },
           callback: val => {
             // Only show powers of 10 (e.g. $0.01, $0.10, $1, $10)
             if (Math.abs(Math.log10(val) - Math.round(Math.log10(val))) > 0.001) return null;
@@ -634,7 +642,7 @@ function renderChart() {
         grid: { color: "rgba(45, 49, 64, 0.5)" },
         ticks: {
           color: "#808690",
-          font: { size: 11 },
+          font: { size: chartFontSize(11) },
           callback: val => val + "%",
         },
       };
@@ -706,8 +714,10 @@ function renderChart() {
           bodyColor: "#9aa0a6",
           borderColor: "#2d3140",
           borderWidth: 1,
-          padding: 12,
+          padding: chartFontSize(12),
           cornerRadius: 8,
+          titleFont: { size: chartFontSize(13) },
+          bodyFont: { size: chartFontSize(12) },
           filter: (tooltipItem) => {
             return !tooltipItem.dataset._isInactive;
           },
@@ -717,7 +727,7 @@ function renderChart() {
       scales: {
         x: {
           grid: { color: "rgba(45, 49, 64, 0.5)" },
-          ticks: { color: "#808690", font: { size: 11 } },
+          ticks: { color: "#808690", font: { size: chartFontSize(11) } },
           min: dateBounds.startLabel || undefined,
           max: dateBounds.endLabel || undefined,
         },
@@ -1385,9 +1395,10 @@ function buildExportCanvas() {
   const sourceCanvas = document.getElementById("benchmarkChart");
   const chartW = sourceCanvas.width;
   const chartH = sourceCanvas.height;
-  const pad = 16 * CHART_DPR;
-  const rowH = 30 * CHART_DPR;
-  const citationH = 36 * CHART_DPR;
+  const exportScale = Math.min(1.35, Math.max(1, 1 + (window.innerWidth - 960) * 0.35 / 1600));
+  const pad = Math.round(16 * CHART_DPR * exportScale);
+  const rowH = Math.round(30 * CHART_DPR * exportScale);
+  const citationH = Math.round(36 * CHART_DPR * exportScale);
 
   // Determine legend layout
   const visibleDatasets = chart.data.datasets
@@ -1396,8 +1407,8 @@ function buildExportCanvas() {
   const activeDs = visibleDatasets.filter(({ ds }) => !ds._isInactive);
   const inactiveDs = visibleDatasets.filter(({ ds }) => ds._isInactive);
   const hasInactiveRow = inactiveDs.length > 0 && currentMode === "frontier";
-  const dividerGap = 6 * CHART_DPR;
-  const legendBottomPad = 16 * CHART_DPR;
+  const dividerGap = Math.round(6 * CHART_DPR * exportScale);
+  const legendBottomPad = Math.round(16 * CHART_DPR * exportScale);
   const legendH = (hasInactiveRow ? rowH * 2 + dividerGap : rowH) + legendBottomPad;
 
   const totalW = chartW + pad * 2;
@@ -1412,11 +1423,11 @@ function buildExportCanvas() {
   ctx.fillStyle = "#0f1117";
   ctx.fillRect(0, 0, totalW, totalH);
 
-  const fontSize = 12 * CHART_DPR;
-  const smallFontSize = 10 * CHART_DPR;
-  const dotR = 4 * CHART_DPR;
-  const dotTextGap = 6 * CHART_DPR;
-  const itemGap = 16 * CHART_DPR;
+  const fontSize = Math.round(11 * CHART_DPR * exportScale);
+  const smallFontSize = Math.round(9 * CHART_DPR * exportScale);
+  const dotR = Math.round(4 * CHART_DPR * exportScale);
+  const dotTextGap = Math.round(6 * CHART_DPR * exportScale);
+  const itemGap = Math.round(16 * CHART_DPR * exportScale);
   const maxLegendX = totalW - pad;
 
   let legendX = pad;
@@ -1477,7 +1488,7 @@ function buildExportCanvas() {
   // Citation footer
   const citationY = totalH - citationH * 0.35;
   ctx.fillStyle = "#808690";
-  ctx.font = `${11 * CHART_DPR}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  ctx.font = `${Math.round(10 * CHART_DPR * exportScale)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
   ctx.textAlign = "left";
   ctx.fillText(SITE_URL, pad, citationY);
   ctx.textAlign = "right";
