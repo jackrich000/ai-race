@@ -550,6 +550,10 @@ const inactivityMarkerPlugin = {
 
 Chart.register(inactivityMarkerPlugin);
 
+// Allow points to draw slightly past the chart area on the right (into layout padding)
+// so markers at the last quarter aren't clipped. Positive = allow overflow.
+Chart.defaults.datasets.line.clip = { left: 0, top: 5, right: 15, bottom: 5 };
+
 function showChartMessage(message) {
   let overlay = document.getElementById("chartMessage");
   if (!overlay) {
@@ -564,6 +568,25 @@ function showChartMessage(message) {
 function clearChartMessage() {
   const el = document.getElementById("chartMessage");
   if (el) el.remove();
+}
+
+/** Check if any dataset has a non-null value within the current date range. */
+function hasVisibleDataInRange() {
+  if (!chart) return false;
+  const dateBounds = computeDateBounds(currentDateRange);
+  const startIdx = dateBounds.startLabel ? TIME_LABELS.indexOf(dateBounds.startLabel) : 0;
+  const endIdx = dateBounds.endLabel ? TIME_LABELS.indexOf(dateBounds.endLabel) : TIME_LABELS.length - 1;
+  if (startIdx < 0 || endIdx < 0) return false;
+  return chart.data.datasets.some(ds =>
+    ds.data.slice(startIdx, endIdx + 1).some(v => v !== null)
+  );
+}
+
+function getEmptyStateMessage() {
+  if (currentMode === "race" && currentBenchmark && BENCHMARKS[currentBenchmark]) {
+    return `No data for ${BENCHMARKS[currentBenchmark].name} in this period.`;
+  }
+  return "No data available for this view.";
 }
 
 function renderChart() {
@@ -591,11 +614,14 @@ function renderChart() {
   const yScale = isCost
     ? {
         type: "logarithmic",
+        title: { display: true, text: "$/M tokens", color: "#5f6368", font: { size: 11 }, padding: { top: 0, bottom: 0 } },
         grid: { color: "rgba(45, 49, 64, 0.5)" },
         ticks: {
           color: "#5f6368",
           font: { size: 11 },
           callback: val => {
+            // Only show powers of 10 (e.g. $0.01, $0.10, $1, $10)
+            if (Math.abs(Math.log10(val) - Math.round(Math.log10(val))) > 0.001) return null;
             if (val >= 1) return "$" + val.toFixed(0);
             if (val >= 0.1) return "$" + val.toFixed(1);
             return "$" + val.toFixed(2);
@@ -660,6 +686,7 @@ function renderChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { right: 15 } },
       interaction: {
         mode: "index",
         intersect: false,
@@ -700,10 +727,9 @@ function renderChart() {
     },
   });
 
-  // Empty state: check if all data points are null
-  const hasData = chart.data.datasets.some(ds => ds.data.some(v => v !== null));
-  if (!hasData) {
-    showChartMessage("No data available for this view.");
+  // Empty state: check if any data exists in the visible date range
+  if (!hasVisibleDataInRange()) {
+    showChartMessage(getEmptyStateMessage());
   }
 }
 
@@ -740,7 +766,7 @@ function renderCustomLegend() {
 
     const label = document.createElement("span");
     label.className = "legend-section-label";
-    label.textContent = "~Defeated Benchmarks";
+    label.textContent = "Major Benchmarks ~Defeated";
     container.appendChild(label);
 
     inactiveItems.forEach(({ ds, idx }) => {
@@ -762,14 +788,6 @@ function createLegendButton(ds, idx, isInactive) {
 
   const text = document.createTextNode(ds.label);
   btn.appendChild(text);
-
-  // Inactive items get a small info icon hint
-  if (isInactive) {
-    const hint = document.createElement("span");
-    hint.className = "legend-info-icon";
-    hint.textContent = "\u24d8"; // ⓘ
-    btn.appendChild(hint);
-  }
 
   // Click: isolate / restore
   btn.addEventListener("click", () => {
@@ -1042,9 +1060,8 @@ function updateChart() {
   updateCitationLine();
 
   // Check empty state after update
-  const hasData = chart.data.datasets.some(ds => ds.data.some(v => v !== null));
-  if (!hasData) {
-    showChartMessage("No data available for this view.");
+  if (!hasVisibleDataInRange()) {
+    showChartMessage(getEmptyStateMessage());
   }
 }
 
@@ -1425,7 +1442,7 @@ function buildExportCanvas() {
 
   // Defeated section (frontier mode only)
   if (inactiveDs.length > 0 && currentMode === "frontier") {
-    const sectionLabel = "~DEFEATED";
+    const sectionLabel = "MAJOR ~DEFEATED";
     ctx.font = `bold ${smallFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     const sectionWidth = ctx.measureText(sectionLabel).width + itemGap;
     if (legendX + sectionWidth <= maxLegendX) {
