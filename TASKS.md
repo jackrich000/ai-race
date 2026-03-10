@@ -36,7 +36,7 @@ Minimum viable launch. Organized into waves for parallel execution.
 - [x] **QA generated analyses across all presets** — Reviewed all 6 presets x 3 modes. Fixed: dropped 2023 (too sparse), cost decline % formula, aggregate cost stat, period labels for year presets, 0pp suppression, LiveCodeBench as third cost benchmark, frontier prompt (analysis over description), benchmark pluralization, simplified cost callout to aggregate only. PR #19 + direct master fixes.
 - [x] **Code cleanliness review & refactor** — Extracted shared config to `lib/config.js` (labs, benchmarks, time helpers), removed ~150 lines of duplication across 4 files, fixed og.js xAI color bug, extracted app.js magic values to named constants, deleted dead `data.js`, added README.md.
 - [x] **Add contact / author details** — Left-aligned footer: "By Jack Richardson [LinkedIn icon] & Claude Code". Substack link to be added later once content exists.
-- [ ] **Write LinkedIn post to announce site**
+- [x] **Write LinkedIn post to announce site**
 
 ---
 
@@ -46,8 +46,8 @@ Deferred — good ideas, not needed for launch.
 
 - [~] **Research additional benchmarks** — Superseded by Wave 3 benchmark expansion task.
 - [ ] **Rethink aggregate view on Lab Race tab** — Hard to get a sense of who is really ahead when data is spread across 6 benchmark tabs. Need a way to show the overall picture.
-- [ ] **Differentiated branding / visual identity** — Come up with branding that could extend across apps, blog, slides. Opportunity to define a reusable visual identity.
-- [ ] **Redesign Cost Intelligence tab** — Concept is complicated, current design isn't intuitive enough.
+- [ ] **Differentiated branding / visual identity** — Come up with branding that could extend across apps, blog, slides. Opportunity to define a reusable visual identity. Explore testing the [frontend-design skill](https://github.com/anthropics/skills/blob/main/skills/frontend-design/SKILL.md) for this.
+- [x] **Redesign Cost Intelligence tab** — Tackled alongside other tasks (structured stat cards, aggregate cost callout, powers-of-10 Y-axis, legend click-to-isolate).
 - [x] **Add older saturated benchmarks** — Implemented as benchmark lifecycle system: 5 active + 3 inactive (HumanEval saturated, ARC-AGI-1 deprecated, SWE-bench Verified deprecated). Grey dashed lines with hover-to-highlight and custom tooltips. Also added SWE-bench Pro as active replacement.
 - [ ] **Set up scheduled data refresh** — Decide frequency (daily vs weekly) based on source update cadence. Automate the ingestion script.
 - [ ] **Automate model card data collection** — Currently MODEL_CARD_DATA is manually curated by reading lab blog posts. Explore browser-use MCP tools (e.g. Playwright MCP, browser-use) to give Claude access to view model card pages and extract benchmark scores directly from official lab announcements. Would eliminate the manual step of reading images/tables and transcribing numbers. Key challenge: scores are often in images/infographics, not structured text.
