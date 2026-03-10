@@ -201,7 +201,7 @@ function renderFilterPills() {
   if (currentMode === "race") {
     renderBenchmarkPills(container);
   } else if (currentMode === "cost") {
-    renderCostPills(container);
+    // No pills — legend handles filtering via click-to-isolate
   } else {
     renderLabPills(container);
   }
@@ -660,7 +660,6 @@ function renderChart() {
         if (model) line += `\n  Model: ${model}`;
         if (lab) line += ` (${lab})`;
         if (score != null) line += `\n  Score: ${score}%`;
-        line += `\n  Source: Artificial Analysis`;
         return line.split("\n");
       }
     : function(context) {
