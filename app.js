@@ -1317,7 +1317,7 @@ function renderAnalysisCard(mode) {
       let changeText = "";
       if (l.direction && l.direction !== "unchanged" && l.startAvgRank !== null) {
         const dirWord = l.direction === "down" ? "improving from" : "worsening from";
-        changeText = `, ${dirWord} <span class="callout-num">${l.startAvgRank}</span> ${l.periodLabel || l.monthsBack + " months ago"}`;
+        changeText = `, ${dirWord} <span class="callout-num">${l.startAvgRank}</span> ${escapeHtml(l.periodLabel || l.monthsBack + " months ago")}`;
       }
       html += `<li class="callout-line"><span><span class="callout-obj">Overall Leader: ${escapeHtml(l.name)}</span> Avg. rank <span class="callout-num">${l.avgRank}</span> across ${l.benchmarkCount} active benchmarks${changeText}. <span class="callout-num">${l.firsts}</span> first-place finishes</span></li>`;
       plainParts.push(`Overall Leader: ${l.name}. Avg rank ${l.avgRank}. ${l.firsts} firsts`);
@@ -1326,7 +1326,7 @@ function renderAnalysisCard(mode) {
       const m = c.biggestMover;
       const dirWord = m.direction === "improved" ? "improving from" : "worsening from";
       const startRank = Math.round((m.avgRank - m.change) * 10) / 10;
-      html += `<li class="callout-line"><span><span class="callout-obj">Biggest mover: ${escapeHtml(m.name)}</span> Avg. rank <span class="callout-num">${m.avgRank}</span> across ${m.benchmarkCount || (c.leader ? c.leader.benchmarkCount : 6)} active benchmarks, ${dirWord} <span class="callout-num">${startRank}</span> ${m.periodLabel || m.monthsBack + " months ago"}. <span class="callout-num">${m.firsts}</span> first-place finishes</span></li>`;
+      html += `<li class="callout-line"><span><span class="callout-obj">Biggest mover: ${escapeHtml(m.name)}</span> Avg. rank <span class="callout-num">${m.avgRank}</span> across ${m.benchmarkCount || (c.leader ? c.leader.benchmarkCount : 6)} active benchmarks, ${dirWord} <span class="callout-num">${startRank}</span> ${escapeHtml(m.periodLabel || m.monthsBack + " months ago")}. <span class="callout-num">${m.firsts}</span> first-place finishes</span></li>`;
       plainParts.push(`Biggest mover: ${m.name}. Avg rank ${m.avgRank}, ${dirWord} ${startRank}`);
     }
   } else if (mode === "cost") {
