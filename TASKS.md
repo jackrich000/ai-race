@@ -30,7 +30,7 @@ Minimum viable launch. Organized into waves for parallel execution.
 
 ### Wave 4 — Final polish before launch
 
-- [ ] **Security audit** — Deep dive all potential security holes and risks before public release. Execute necessary improvements.
+- [x] **Security audit** — Full audit: git history secret scan (clean), Supabase RLS verified (read-only), path traversal fix, SRI on CDN scripts, security headers (CSP, HSTS, X-Frame-Options, etc.), XSS escaping gaps closed. PR #20.
 - [x] **Design, accessibility & responsiveness review** — Colorblind-safe colors, WCAG AA contrast, fluid desktop scaling (clamp root font-size 1rem-1.25rem, 1200px container, Chart.js/export font scaling). Mobile UX: hidden inactive legend, disabled tooltips, tighter legend, larger chart, touch targets, overflow protection.
 - [x] **Refine AI analysis prompt & UI** — Rearchitected: structured stat cards (code-computed) + LLM headlines/commentary (JSON). Mode-specific rendering, trailing 12-month window, unified info area, single-quarter presets filtered. All 7 presets regenerated. PR #18.
 - [x] **QA generated analyses across all presets** — Reviewed all 6 presets x 3 modes. Fixed: dropped 2023 (too sparse), cost decline % formula, aggregate cost stat, period labels for year presets, 0pp suppression, LiveCodeBench as third cost benchmark, frontier prompt (analysis over description), benchmark pluralization, simplified cost callout to aggregate only. PR #19 + direct master fixes.
