@@ -27,6 +27,7 @@ Waves 1-4 shipped. See git history for details.
 - [ ] **Automate model card data collection** — Currently MODEL_CARD_DATA is manually curated by reading lab blog posts. Explore browser-use MCP tools (e.g. Playwright MCP, browser-use) to give Claude access to view model card pages and extract benchmark scores directly from official lab announcements. Would eliminate the manual step of reading images/tables and transcribing numbers. Key challenge: scores are often in images/infographics, not structured text.
 - [ ] **Add test suite for data pipeline** — Unit tests for cumulative-best computation, quarter generation, verified/unverified filtering, and config consistency checks.
 - [ ] **Explore efficient manual benchmark entry** — MMMU/MMMU-Pro (multimodal) and OSWorld (computer use) would broaden capability coverage but lack automated data sources. Investigate lightweight manual entry workflows.
+- [ ] **Zoom to fit** — Chart automatically zooms to the time period where the selected benchmark is active, so you're not looking at empty space before/after it existed.
 - [ ] **Non-percentage benchmark visualizations** — Design a way to display benchmarks with non-% scoring (Elo, minutes, percentile). Candidates: METR Time Horizons, GDPval, Codeforces / LiveCodeBench Pro. Requires a different chart type or normalization approach.
 
 ---
