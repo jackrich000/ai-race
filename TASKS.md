@@ -14,7 +14,7 @@ Waves 1-4 shipped. See git history for details.
 ## Backlog
 
 - [ ] **Review JP's codebase roast** — Go through JP's feedback and identify concrete, actionable improvements. Separate signal from noise.
-- [ ] **Codebase walkthrough** — Guided tour of the codebase so Jack understands what each file/module does and how data flows end-to-end.
+- [x] **Codebase walkthrough** — Guided tour of the codebase so Jack understands what each file/module does and how data flows end-to-end. (2026-03-18)
 
 - [ ] **Make site accessible to non-technical audiences** — Multiple improvements:
   - Better structure expanded benchmark descriptions in methodology section: clearly separate a) what the benchmark is from b) where we get the data

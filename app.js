@@ -377,135 +377,136 @@ function buildCostDatasets() {
   }).filter(Boolean);
 }
 
+function buildRaceDatasets() {
+  const bench = BENCHMARKS[currentBenchmark];
+  if (!bench) return [];
+
+  return Object.entries(LABS).map(([labKey, lab]) => {
+    const verifiedArr = bench.scores[labKey].map(d => d ? d.verified : true);
+    const pointStyle = buildPointStyleArrays(verifiedArr, lab.color);
+    return {
+      label: lab.name,
+      data: bench.scores[labKey].map(d => d ? d.score : null),
+      _models: bench.scores[labKey].map(d => d ? d.model : null),
+      _source: bench.scores[labKey].map(d => d ? d.source : null),
+      _verified: verifiedArr,
+      borderColor: lab.color,
+      backgroundColor: lab.color + "33",
+      borderWidth: 2.5,
+      pointRadius: 4,
+      pointHoverRadius: 6,
+      ...pointStyle,
+      tension: 0.3,
+      spanGaps: true,
+    };
+  });
+}
+
+function buildFrontierDatasets() {
+  const labKeys = selectedLab ? [selectedLab] : Object.keys(LABS);
+  const filterEnd = getFilterEndDate();
+
+  return Object.entries(BENCHMARKS).map(([benchKey, benchData]) => {
+    const isInactive = !isBenchmarkActive(benchKey, filterEnd);
+    const meta = BENCHMARK_META[benchKey];
+
+    const frontierData = [];
+    const frontierModels = [];
+    const frontierLabs = [];
+    const frontierVerified = [];
+    const frontierSources = [];
+
+    // Find the activeUntil quarter index for truncation
+    let activeUntilIdx = TIME_LABELS.length - 1;
+    if (isInactive && meta.activeUntil) {
+      const idx = TIME_LABELS.indexOf(meta.activeUntil);
+      if (idx >= 0) activeUntilIdx = idx;
+    }
+
+    // Get score at the inactivity point for truncation check
+    let inactivityScore = null;
+
+    for (let i = 0; i < TIME_LABELS.length; i++) {
+      let bestScore = null;
+      let bestModel = null;
+      let bestLab = null;
+      let bestVerified = true;
+      let bestSource = null;
+
+      for (const labKey of labKeys) {
+        const entry = benchData.scores[labKey][i];
+        if (entry !== null && (bestScore === null || entry.score > bestScore)) {
+          bestScore = entry.score;
+          bestModel = entry.model;
+          bestLab = labKey;
+          bestVerified = entry.verified !== false;
+          bestSource = entry.source || null;
+        }
+      }
+
+      // Track score at inactivity point
+      if (i === activeUntilIdx && bestScore !== null) {
+        inactivityScore = bestScore;
+      }
+
+      // Truncate inactive lines: null out points after activeUntil unless >10pp improvement
+      if (isInactive && i > activeUntilIdx) {
+        if (inactivityScore !== null && bestScore !== null && (bestScore - inactivityScore) > 10) {
+          // Significant improvement — keep the point
+        } else {
+          bestScore = null;
+          bestModel = null;
+          bestLab = null;
+          bestVerified = true;
+          bestSource = null;
+        }
+      }
+
+      frontierData.push(bestScore);
+      frontierModels.push(bestModel);
+      frontierLabs.push(bestLab);
+      frontierVerified.push(bestVerified);
+      frontierSources.push(bestSource);
+    }
+
+    const color = BENCHMARK_COLORS[benchKey];
+    const baseColor = isInactive ? INACTIVE_COLOR : color;
+    const pointStyle = buildPointStyleArrays(frontierVerified, baseColor);
+    const ds = {
+      label: benchData.name,
+      data: frontierData,
+      _models: frontierModels,
+      _labs: frontierLabs,
+      _source: frontierSources,
+      _verified: frontierVerified,
+      _benchKey: benchKey,
+      _isInactive: isInactive,
+      _inactiveReason: meta.inactiveReason || null,
+      _activeUntil: meta.activeUntil || null,
+      borderColor: baseColor,
+      backgroundColor: baseColor + "33",
+      borderWidth: isInactive ? INACTIVE_BORDER_WIDTH : 2.5,
+      pointRadius: isInactive ? 2 : 4,
+      pointHoverRadius: isInactive ? 4 : 6,
+      ...pointStyle,
+      pointHoverBackgroundColor: isInactive ? INACTIVE_COLOR : color,
+      tension: 0.3,
+      spanGaps: true,
+      order: isInactive ? 1 : 0, // inactive lines render behind active
+    };
+
+    if (isInactive) {
+      ds.borderDash = [4, 4];
+    }
+
+    return ds;
+  });
+}
+
 function buildDatasets() {
-  if (currentMode === "cost") {
-    return buildCostDatasets();
-  }
-
-  if (currentMode === "race") {
-    const bench = BENCHMARKS[currentBenchmark];
-    if (!bench) return [];
-
-    return Object.entries(LABS).map(([labKey, lab]) => {
-      const verifiedArr = bench.scores[labKey].map(d => d ? d.verified : true);
-      const pointStyle = buildPointStyleArrays(verifiedArr, lab.color);
-      return {
-        label: lab.name,
-        data: bench.scores[labKey].map(d => d ? d.score : null),
-        _models: bench.scores[labKey].map(d => d ? d.model : null),
-        _source: bench.scores[labKey].map(d => d ? d.source : null),
-        _verified: verifiedArr,
-        borderColor: lab.color,
-        backgroundColor: lab.color + "33",
-        borderWidth: 2.5,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        ...pointStyle,
-        tension: 0.3,
-        spanGaps: true,
-      };
-    });
-  } else {
-    // Frontier: one line per benchmark
-    const labKeys = selectedLab ? [selectedLab] : Object.keys(LABS);
-    const filterEnd = getFilterEndDate();
-
-    return Object.entries(BENCHMARKS).map(([benchKey, benchData]) => {
-      const isInactive = !isBenchmarkActive(benchKey, filterEnd);
-      const meta = BENCHMARK_META[benchKey];
-
-      const frontierData = [];
-      const frontierModels = [];
-      const frontierLabs = [];
-      const frontierVerified = [];
-      const frontierSources = [];
-
-      // Find the activeUntil quarter index for truncation
-      let activeUntilIdx = TIME_LABELS.length - 1;
-      if (isInactive && meta.activeUntil) {
-        const idx = TIME_LABELS.indexOf(meta.activeUntil);
-        if (idx >= 0) activeUntilIdx = idx;
-      }
-
-      // Get score at the inactivity point for truncation check
-      let inactivityScore = null;
-
-      for (let i = 0; i < TIME_LABELS.length; i++) {
-        let bestScore = null;
-        let bestModel = null;
-        let bestLab = null;
-        let bestVerified = true;
-        let bestSource = null;
-
-        for (const labKey of labKeys) {
-          const entry = benchData.scores[labKey][i];
-          if (entry !== null && (bestScore === null || entry.score > bestScore)) {
-            bestScore = entry.score;
-            bestModel = entry.model;
-            bestLab = labKey;
-            bestVerified = entry.verified !== false;
-            bestSource = entry.source || null;
-          }
-        }
-
-        // Track score at inactivity point
-        if (i === activeUntilIdx && bestScore !== null) {
-          inactivityScore = bestScore;
-        }
-
-        // Truncate inactive lines: null out points after activeUntil unless >10pp improvement
-        if (isInactive && i > activeUntilIdx) {
-          if (inactivityScore !== null && bestScore !== null && (bestScore - inactivityScore) > 10) {
-            // Significant improvement — keep the point
-          } else {
-            bestScore = null;
-            bestModel = null;
-            bestLab = null;
-            bestVerified = true;
-            bestSource = null;
-          }
-        }
-
-        frontierData.push(bestScore);
-        frontierModels.push(bestModel);
-        frontierLabs.push(bestLab);
-        frontierVerified.push(bestVerified);
-        frontierSources.push(bestSource);
-      }
-
-      const color = BENCHMARK_COLORS[benchKey];
-      const baseColor = isInactive ? INACTIVE_COLOR : color;
-      const pointStyle = buildPointStyleArrays(frontierVerified, baseColor);
-      const ds = {
-        label: benchData.name,
-        data: frontierData,
-        _models: frontierModels,
-        _labs: frontierLabs,
-        _source: frontierSources,
-        _verified: frontierVerified,
-        _benchKey: benchKey,
-        _isInactive: isInactive,
-        _inactiveReason: meta.inactiveReason || null,
-        _activeUntil: meta.activeUntil || null,
-        borderColor: baseColor,
-        backgroundColor: baseColor + "33",
-        borderWidth: isInactive ? INACTIVE_BORDER_WIDTH : 2.5,
-        pointRadius: isInactive ? 2 : 4,
-        pointHoverRadius: isInactive ? 4 : 6,
-        ...pointStyle,
-        pointHoverBackgroundColor: isInactive ? INACTIVE_COLOR : color,
-        tension: 0.3,
-        spanGaps: true,
-        order: isInactive ? 1 : 0, // inactive lines render behind active
-      };
-
-      if (isInactive) {
-        ds.borderDash = [4, 4];
-      }
-
-      return ds;
-    });
-  }
+  if (currentMode === "cost") return buildCostDatasets();
+  if (currentMode === "race") return buildRaceDatasets();
+  return buildFrontierDatasets();
 }
 
 // ─── Inactivity marker plugin ────────────────────────────────
@@ -704,7 +705,7 @@ function renderChart() {
         mode: "nearest",
         intersect: false,
       },
-      onHover: handleChartHover,
+      onHover: () => {}, // inactive line hover is handled via legend, not chart area
       plugins: {
         legend: {
           display: false, // we use a custom HTML legend
@@ -970,10 +971,6 @@ function unhighlightInactive(datasetIndex) {
   if (isolatedIndex === datasetIndex) return;
   resetInactiveStyle(ds);
   chart.update("none");
-}
-
-function handleChartHover(event, elements) {
-  // Inactive line hover is handled via legend only — no chart-area interaction
 }
 
 // ─── Inactive tooltip ────────────────────────────────────────
@@ -1399,9 +1396,22 @@ function buildExportCanvas() {
   const chartW = sourceCanvas.width;
   const chartH = sourceCanvas.height;
   const exportScale = Math.min(1.25, Math.max(1, 1 + (window.innerWidth - 960) * 0.25 / 1600));
-  const pad = Math.round(16 * CHART_DPR * exportScale);
-  const rowH = Math.round(30 * CHART_DPR * exportScale);
-  const citationH = Math.round(36 * CHART_DPR * exportScale);
+
+  // All pixel values are multiplied by CHART_DPR (device pixel ratio) and exportScale
+  // to render crisply at any screen resolution
+  const scaled = (base) => Math.round(base * CHART_DPR * exportScale);
+
+  const pad = scaled(16);           // outer padding around entire export
+  const rowH = scaled(30);          // height of one legend row
+  const citationH = scaled(36);     // height of the citation footer
+  const dividerGap = scaled(6);     // gap around the active/inactive divider line
+  const legendBottomPad = scaled(16); // space between legend and chart
+  const fontSize = scaled(11);      // legend label font size
+  const smallFontSize = scaled(9);  // section header font size ("MAJOR BENCHMARKS ~DEFEATED")
+  const dotR = scaled(4);           // legend color dot radius
+  const dotTextGap = scaled(6);     // gap between dot and label text
+  const itemGap = scaled(16);       // gap between legend items
+  const citationFontSize = scaled(10); // citation footer font size
 
   // Determine legend layout
   const visibleDatasets = chart.data.datasets
@@ -1410,8 +1420,6 @@ function buildExportCanvas() {
   const activeDs = visibleDatasets.filter(({ ds }) => !ds._isInactive);
   const inactiveDs = visibleDatasets.filter(({ ds }) => ds._isInactive);
   const hasInactiveRow = inactiveDs.length > 0 && currentMode === "frontier";
-  const dividerGap = Math.round(6 * CHART_DPR * exportScale);
-  const legendBottomPad = Math.round(16 * CHART_DPR * exportScale);
   const legendH = (hasInactiveRow ? rowH * 2 + dividerGap : rowH) + legendBottomPad;
 
   const totalW = chartW + pad * 2;
@@ -1425,12 +1433,6 @@ function buildExportCanvas() {
   // Background
   ctx.fillStyle = "#0f1117";
   ctx.fillRect(0, 0, totalW, totalH);
-
-  const fontSize = Math.round(11 * CHART_DPR * exportScale);
-  const smallFontSize = Math.round(9 * CHART_DPR * exportScale);
-  const dotR = Math.round(4 * CHART_DPR * exportScale);
-  const dotTextGap = Math.round(6 * CHART_DPR * exportScale);
-  const itemGap = Math.round(16 * CHART_DPR * exportScale);
   const maxLegendX = totalW - pad;
 
   let legendX = pad;
@@ -1491,7 +1493,7 @@ function buildExportCanvas() {
   // Citation footer
   const citationY = totalH - citationH * 0.35;
   ctx.fillStyle = "#808690";
-  ctx.font = `${Math.round(10 * CHART_DPR * exportScale)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  ctx.font = `${citationFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
   ctx.textAlign = "left";
   ctx.fillText(SITE_URL, pad, citationY);
   ctx.textAlign = "right";
