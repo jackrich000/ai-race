@@ -101,7 +101,7 @@ ${articles.map((a, i) => `${i}. "${a.title}" (${a.url})`).join("\n")}`;
 
   const resp = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 1024,
+    max_tokens: 2048,
     messages: [{ role: "user", content: prompt }],
   });
 
@@ -219,7 +219,8 @@ async function extractScoresFromArticle(stagehand, anthropic, url) {
 }
 
 /**
- * Scan a blog index page for article links using Stagehand.
+ * Scan a blog index page for article links.
+ * Uses DOM extraction (reliable for href values), falls back to Stagehand.
  */
 async function scanBlogIndex(stagehand, anthropic, source) {
   const page = stagehand.context.activePage();
@@ -228,30 +229,76 @@ async function scanBlogIndex(stagehand, anthropic, source) {
   await page.goto(source.indexUrl, { waitUntil: "load", timeout: 30000 });
   await new Promise(r => setTimeout(r, 3000));
 
-  // Extract article links via Stagehand
-  const ArticlesSchema = z.object({
-    articles: z.array(z.object({
-      title: z.string().describe("Article title"),
-      url: z.string().describe("Full URL to the article"),
-      date: z.string().optional().describe("Publication date if visible"),
-    })).describe("Blog post articles visible on this page"),
-  });
-
+  // Primary: DOM-based extraction (reliable for actual href values)
   let articles = [];
   try {
-    const result = await stagehand.extract(
-      "Extract all blog post article titles and their URLs from this page. Focus on model announcements, research papers, and product updates.",
-      ArticlesSchema,
-    );
-    articles = result?.articles || [];
-    // Ensure URLs are absolute
-    articles = articles.map(a => ({
-      ...a,
-      url: a.url.startsWith("http") ? a.url : new URL(a.url, source.indexUrl).href,
-    }));
-    console.log(`   Found ${articles.length} articles`);
+    articles = await page.evaluate(() => {
+      const links = Array.from(document.querySelectorAll("a[href]"));
+      const seen = new Set();
+      const results = [];
+
+      for (const link of links) {
+        const href = link.href;
+
+        // Filter: must be a path-like URL, not already seen
+        if (!href || seen.has(href)) continue;
+        const path = new URL(href).pathname;
+        if (path === "/" || path.split("/").length < 3) continue;
+        if (/\.(png|jpg|svg|css|js|xml|pdf)$/i.test(path)) continue;
+
+        // Extract a clean title: prefer heading elements, fall back to first line of text
+        const heading = link.querySelector("h1, h2, h3, h4, h5, h6, [class*='title'], [class*='heading']");
+        let title = heading
+          ? heading.textContent.trim()
+          : (link.textContent || "").trim().split("\n")[0].trim();
+        title = title.replace(/\s+/g, " ");
+
+        if (title.length < 5 || title.length > 200) continue;
+
+        seen.add(href);
+        results.push({ title: title.substring(0, 150), url: href });
+      }
+
+      return results;
+    });
+
+    // Filter: same domain only, and likely blog post paths (not product/nav pages)
+    const sourceHost = new URL(source.indexUrl).hostname;
+    articles = articles.filter(a => {
+      try {
+        const url = new URL(a.url);
+        if (url.hostname !== sourceHost) return false;
+        // Typical blog patterns: /news/slug, /index/slug, /blog/slug, /research/slug
+        return /\/(news|index|blog|research|updates|announcements)\/.+/.test(url.pathname);
+      } catch { return false; }
+    });
+
+    console.log(`   Found ${articles.length} article links via DOM`);
   } catch (err) {
-    console.warn(`   Index scan failed: ${err.message.substring(0, 100)}`);
+    console.warn(`   DOM extraction failed: ${err.message.substring(0, 100)}`);
+  }
+
+  // Fallback: Stagehand extract if DOM found nothing
+  if (articles.length === 0) {
+    try {
+      const ArticlesSchema = z.object({
+        articles: z.array(z.object({
+          title: z.string().describe("Article title"),
+          url: z.string().describe("Full URL to the article"),
+        })).describe("Blog post articles visible on this page"),
+      });
+
+      const result = await stagehand.extract(
+        "Extract all blog post article titles and their full URLs (href) from this page.",
+        ArticlesSchema,
+      );
+      articles = (result?.articles || [])
+        .filter(a => a.url && a.url.startsWith("http"))
+        .map(a => ({ title: a.title, url: a.url }));
+      console.log(`   Found ${articles.length} articles via Stagehand fallback`);
+    } catch (err) {
+      console.warn(`   Stagehand fallback failed: ${err.message.substring(0, 100)}`);
+    }
   }
 
   return articles;
