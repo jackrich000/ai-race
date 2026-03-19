@@ -7,7 +7,6 @@ const {
   BENCHMARK_META,
   COST_BENCHMARK_META,
   LAB_KEYS,
-  TIME_LABELS,
 } = require("../lib/config.js");
 
 // ─── generateTimeLabels ──────────────────────────────────────
