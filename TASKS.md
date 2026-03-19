@@ -24,12 +24,21 @@ Waves 1-4 shipped. See git history for details.
 - [ ] **Share best insights from the site on LinkedIn / Reddit** — Identify the most compelling data stories and package them for social sharing.
 - [ ] **Rethink aggregate view on Lab Race tab** — Hard to get a sense of who is really ahead when data is spread across 6 benchmark tabs. Need a way to show the overall picture.
 - [ ] **Differentiated branding / visual identity** — Come up with branding that could extend across apps, blog, slides. Opportunity to define a reusable visual identity. Explore testing the [frontend-design skill](https://github.com/anthropics/skills/blob/main/skills/frontend-design/SKILL.md) for this.
-- [-] **Automated data pipeline** — Consolidated from 3 separate tasks (scheduled refresh, model card automation, test suite). Plan complete, ready for implementation. Weekly Thursday night cron + manual dispatch. Full plan in `.claude/plans/floofy-pondering-river.md`. (2026-03-19)
-  - Phase 1: Test suite (Vitest, extract pure functions, comprehensive tests)
-  - Phase 2: Data model migration (benchmark_raw columns, seed existing model cards, read from Supabase)
-  - Phase 3: Model card extraction (Browserbase/Stagehand, extract() + vision, LLM triage, GitHub Issue alerts)
-  - Phase 4: GitHub Actions workflow + alerting
-  - Prototype validated: Browserbase bypasses anti-bot on OpenAI/xAI, extract() + vision complementary, Sonnet 4.5 100% accurate on viewport screenshots
+- [-] **Automated data pipeline** — Weekly automated refresh of all data sources + model card extraction from lab blogs. (2026-03-19)
+  - [x] Phase 1: Test suite (Vitest + `lib/pipeline.js`, 77 tests) — PR #22, merged
+  - [x] Phase 2: Data model + DB-driven model cards (migration, seed script, post-insert verification) — PR #23, merged
+  - [-] Phase 3: Model card extraction — PR #24, in progress. Core pipeline built, accuracy needs iteration:
+    - [x] Blog scanning + article classification (Haiku) working reliably
+    - [x] Element-targeted screenshots (tables/charts/figures) implemented
+    - [x] Benchmark normalization + triage logic with tests
+    - [-] Image capture quality: column headers missing from tall table screenshots (partially fixed with overlap, needs more work)
+    - [ ] Use Anthropic structured outputs for guaranteed JSON (`output_format: { type: "json_schema" }`)
+    - [ ] Set temperature: 0 for deterministic extraction
+    - [ ] Chain-of-thought grounding in vision prompt ("list column headers first")
+    - [ ] Reconciliation step: LLM picks best value when extract() and vision disagree (e.g., footnote 80.2 vs table 79.6)
+    - [ ] Test against 3-4 lab pages with manually verified ground truth (only Anthropic tested so far)
+    - [ ] Near 100% accuracy on test pages before merging
+  - [ ] Phase 4: GitHub Actions workflow + alerting (blocked on Phase 3)
 - [ ] **Explore efficient manual benchmark entry** — MMMU/MMMU-Pro (multimodal) and OSWorld (computer use) would broaden capability coverage but lack automated data sources. Investigate lightweight manual entry workflows.
 - [ ] **Zoom to fit** — Chart automatically zooms to the time period where the selected benchmark is active, so you're not looking at empty space before/after it existed.
 - [ ] **Non-percentage benchmark visualizations** — Design a way to display benchmarks with non-% scoring (Elo, minutes, percentile). Candidates: METR Time Horizons, GDPval, Codeforces / LiveCodeBench Pro. Requires a different chart type or normalization approach.
