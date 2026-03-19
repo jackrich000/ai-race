@@ -119,7 +119,7 @@ ${articles.map((a, i) => `${i}. "${a.title}" (${a.url})`).join("\n")}`;
  * Extract benchmark scores from a single article page using both
  * Stagehand extract() and Claude Vision on viewport screenshots.
  */
-async function extractScoresFromArticle(stagehand, anthropic, url) {
+async function extractScoresFromArticle(stagehand, anthropic, url, modelName) {
   const page = stagehand.context.activePage();
 
   // Navigate
@@ -131,7 +131,14 @@ async function extractScoresFromArticle(stagehand, anthropic, url) {
   // Method 1: Stagehand extract()
   try {
     const extracted = await stagehand.extract(
-      "Extract all AI benchmark scores mentioned on this page. Look for benchmarks like GPQA Diamond, MMLU-Pro, HLE (Humanity's Last Exam), ARC-AGI-2, SWE-bench, SWE-bench Verified, SWE-bench Pro, AIME, FrontierMath, MATH, LiveCodeBench, HumanEval, and any others. Include the model name, benchmark name, score, and any qualifiers.",
+      `Extract benchmark scores for "${modelName}" ONLY. Rules:
+- ONLY extract scores for "${modelName}". Ignore scores for any other model (older versions, competitors, etc.).
+- ONLY extract scores that are explicitly stated as numbers in text or tables.
+- Do NOT estimate or infer scores from charts, graphs, or bar heights.
+- Prefer scores from the main model card summary table over footnotes or body text.
+- If a footnote shows a different score than the main table for the same benchmark, use the main table value.
+- Skip any benchmark where you cannot find an explicit numeric score.
+- Include the exact model variant (e.g. "with tools", "without tools") if specified.`,
       BenchmarkScoresSchema,
     );
     if (extracted?.scores) {
@@ -152,36 +159,130 @@ async function extractScoresFromArticle(stagehand, anthropic, url) {
     console.warn(`     extract() failed: ${err.message.substring(0, 100)}`);
   }
 
-  // Method 2: Vision on viewport screenshots
-  const viewportHeight = await page.evaluate(() => window.innerHeight);
-  const totalHeight = await page.evaluate(() => document.body.scrollHeight);
-  const numScreenshots = Math.min(Math.ceil(totalHeight / viewportHeight), 15);
+  // Method 2: Vision on targeted screenshots of tables, charts, and figures
   let visionCount = 0;
 
-  for (let i = 0; i < numScreenshots; i++) {
-    await page.evaluate((y) => window.scrollTo(0, y), i * viewportHeight);
-    await new Promise(r => setTimeout(r, 500));
+  // Find all visual score containers on the page
+  const elements = await page.evaluate(() => {
+    const results = [];
+    const selectors = [
+      "table",
+      "figure",
+      "[role='table']",
+      "[role='figure']",
+      "[class*='chart']",
+      "[class*='benchmark']",
+      "[class*='score']",
+      "[class*='comparison']",
+      "[class*='table']",
+      "[class*='leaderboard']",
+    ];
+
+    const seen = new Set();
+    for (const selector of selectors) {
+      for (const el of document.querySelectorAll(selector)) {
+        const rect = el.getBoundingClientRect();
+        // Skip tiny elements, off-screen, or duplicates
+        if (rect.width < 200 || rect.height < 100) continue;
+        const key = `${Math.round(rect.x)},${Math.round(rect.y)},${Math.round(rect.width)},${Math.round(rect.height)}`;
+        if (seen.has(key)) continue;
+
+        // Skip if this element is inside an already-captured parent
+        let isChild = false;
+        for (const existing of seen) {
+          const [ex, ey, ew, eh] = existing.split(",").map(Number);
+          if (rect.x >= ex && rect.y >= ey &&
+              rect.x + rect.width <= ex + ew &&
+              rect.y + rect.height <= ey + eh) {
+            isChild = true;
+            break;
+          }
+        }
+        if (isChild) continue;
+
+        seen.add(key);
+        results.push({
+          x: Math.max(0, rect.x + window.scrollX),
+          y: Math.max(0, rect.y + window.scrollY),
+          width: Math.ceil(rect.width),
+          height: Math.ceil(rect.height),
+          tag: el.tagName.toLowerCase(),
+          className: (el.className || "").toString().substring(0, 100),
+        });
+      }
+    }
+    return results;
+  });
+
+  console.log(`     Found ${elements.length} visual elements (tables/charts/figures)`);
+
+  // Fall back to viewport scrolling if no elements found
+  if (elements.length === 0) {
+    const viewportHeight = await page.evaluate(() => window.innerHeight);
+    const totalHeight = await page.evaluate(() => document.body.scrollHeight);
+    const numScreenshots = Math.min(Math.ceil(totalHeight / viewportHeight), 10);
+    for (let i = 0; i < numScreenshots; i++) {
+      elements.push({
+        x: 0,
+        y: i * viewportHeight,
+        width: await page.evaluate(() => window.innerWidth),
+        height: viewportHeight,
+        tag: "viewport",
+        className: `fallback-${i}`,
+      });
+    }
+    console.log(`     Falling back to ${numScreenshots} viewport screenshots`);
+  }
+
+  for (let i = 0; i < elements.length; i++) {
+    const el = elements[i];
+    const viewportHeight = await page.evaluate(() => window.innerHeight);
+
+    // For tall elements, take multiple viewport screenshots to cover the full element
+    const numShots = Math.min(Math.ceil(el.height / viewportHeight), 3);
+
+    for (let shot = 0; shot < numShots; shot++) {
+    const scrollY = Math.max(0, el.y - 20 + shot * viewportHeight);
+    await page.evaluate((y) => window.scrollTo(0, y), scrollY);
+    await new Promise(r => setTimeout(r, 300));
+
     const ssBuffer = await page.screenshot();
     const ssBase64 = Buffer.from(ssBuffer).toString("base64");
 
     try {
       const resp = await anthropic.messages.create({
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: 2048,
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        system: "You extract benchmark scores from images. Always respond with valid JSON only. No explanations.",
         messages: [{
           role: "user",
           content: [
             { type: "image", source: { type: "base64", media_type: "image/png", data: ssBase64 } },
             {
               type: "text",
-              text: `This is screenshot ${i + 1}/${numScreenshots} of an AI model announcement blog post. Extract ALL benchmark scores visible as numbers. Return ONLY JSON: {"scores": [{"model_name": "...", "benchmark": "...", "score": <number>, "notes": "..."}]}. If no numeric scores visible, return {"scores": []}.`,
+              text: `Extract benchmark scores for "${modelName}" from this image.
+
+RULES:
+- If this is a comparison table: find the "${modelName}" column header, then read every score in that column. Use the row label (left side) as benchmark name. Prefer subtitles (e.g. "SWE-bench Verified") over main labels.
+- If this is a chart: only extract scores with explicit numeric data labels. Do NOT estimate from bar heights.
+- ONLY scores for "${modelName}". Double-check the column.
+- Report exact numbers as written. Do not round.
+- If variants exist (e.g. "with tools" / "without tools"), extract both.
+
+Respond with ONLY this JSON format, nothing else:
+{"scores": [{"benchmark": "...", "score": <number>, "notes": "..."}]}`,
             },
           ],
         }],
       });
 
       const text = resp.content.filter(b => b.type === "text").map(b => b.text).join("");
-      const cleaned = text.replace(/^```json\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+      let cleaned = text.replace(/^```json\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+      // If response contains prose around JSON, try to extract the JSON object
+      if (!cleaned.startsWith("{")) {
+        const jsonMatch = cleaned.match(/\{[\s\S]*"scores"[\s\S]*\}/);
+        if (jsonMatch) cleaned = jsonMatch[0];
+      }
       const parsed = JSON.parse(cleaned);
       if (parsed.scores) {
         for (const s of parsed.scores) {
@@ -196,12 +297,16 @@ async function extractScoresFromArticle(stagehand, anthropic, url) {
             visionCount++;
           }
         }
+        if (parsed.scores.length > 0) {
+          console.log(`     element ${i + 1}/${shot + 1} (${el.tag}): ${parsed.scores.filter(s => s.score > 0).length} scores`);
+        }
       }
-    } catch {
-      // Skip failed screenshots
+    } catch (err) {
+      console.warn(`     element ${i + 1}/${shot + 1} vision error: ${err.message.substring(0, 150)}`);
     }
-  }
-  console.log(`     vision: ${visionCount} scores from ${numScreenshots} screenshots`);
+    } // end shot loop
+  } // end element loop
+  console.log(`     vision total: ${visionCount} scores from ${elements.length} elements`);
 
   // Deduplicate on (benchmark, model, score) - keep first occurrence
   const seen = new Set();
@@ -430,7 +535,7 @@ async function main() {
 
     for (const article of newArticles) {
       console.log(`   Processing: "${article.title}" (${article.url})`);
-      const scores = await extractScoresFromArticle(stagehand, anthropic, article.url);
+      const scores = await extractScoresFromArticle(stagehand, anthropic, article.url, article.modelName);
       allExtracted.push({ article, scores });
     }
   } finally {
