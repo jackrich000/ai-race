@@ -37,7 +37,7 @@ const {
   normalizeOrg, quarterEndDate, extractDateFromModelId,
   arcModelIdToLab, modelNameToLab,
   filterVerifiedDuplicates, computeCumulativeBest, computeCumulativeMin,
-  findCol,
+  generateMatchVerifiedRegex, findCol,
 } = require("../lib/pipeline.js");
 
 // Current quarter midpoint for ARC Prize entries without extractable dates
@@ -105,6 +105,40 @@ const MODEL_CARD_DATA = [
   { benchmark: "hle", lab: "google", model: "Gemini 3.1 Pro", score: 44.4, date: new Date("2026-02-19"), source: "model_card", verified: false, matchVerified: /gemini.?3[\.\s-]?1.?pro/i },
   { benchmark: "arc-agi-2", lab: "google", model: "Gemini 3.1 Pro", score: 77.1, date: new Date("2026-02-19"), source: "model_card", verified: false, matchVerified: /gemini.?3[\.\s-]?1.?pro/i },
 ];
+
+// ─── Source 7: Model cards from Supabase (DB-driven path) ────
+
+/**
+ * Fetch model card data from benchmark_raw where source is 'model_card' or 'model_card_auto'.
+ * Returns same shape as MODEL_CARD_DATA for drop-in replacement.
+ */
+async function fetchModelCardData(supabase) {
+  const { data, error } = await supabase
+    .from("benchmark_raw")
+    .select("benchmark, lab, model, score, date, source, verified")
+    .in("source", ["model_card", "model_card_auto"]);
+
+  if (error) {
+    console.warn("   [ModelCards] WARN: Failed to fetch from DB:", error.message);
+    return null; // Caller falls back to hardcoded
+  }
+
+  if (!data || data.length === 0) {
+    console.warn("   [ModelCards] WARN: No model card rows in DB");
+    return null;
+  }
+
+  return data.map(row => ({
+    benchmark: row.benchmark,
+    lab: row.lab,
+    model: row.model,
+    score: row.score,
+    date: new Date(row.date),
+    source: row.source,
+    verified: row.verified === true,
+    matchVerified: generateMatchVerifiedRegex(row.model),
+  }));
+}
 
 // ─── HTTP helpers ────────────────────────────────────────────
 
@@ -658,9 +692,17 @@ async function main() {
     fetchCostData().catch(err => { console.error("   [Cost] FAILED:", err.message); return []; }),
   ]);
 
-  // Merge all data points, filter model card duplicates, then group by benchmark
+  // Fetch model card data: try DB first, fall back to hardcoded
   console.log("\n2. Merging data and computing cumulative best...");
-  const allMerged = [...aaData, ...sweData, ...arcData, ...epochData, ...MODEL_CARD_DATA];
+  const dbModelCards = await fetchModelCardData(supabase);
+  const modelCardData = dbModelCards || MODEL_CARD_DATA;
+  if (dbModelCards) {
+    console.log(`   Using ${dbModelCards.length} model card entries from DB`);
+  } else {
+    console.log(`   Using ${MODEL_CARD_DATA.length} hardcoded model card entries (DB fallback)`);
+  }
+
+  const allMerged = [...aaData, ...sweData, ...arcData, ...epochData, ...modelCardData];
   const allFiltered = filterVerifiedDuplicates(allMerged);
 
   const byBenchmark = {}; // { benchKey: { labKey: [dataPoints] } }
@@ -802,6 +844,33 @@ async function main() {
   }
 
   console.log(`   Inserted ${allRows.length} rows successfully.`);
+
+  // Post-insert verification: check row counts per benchmark
+  console.log("   Verifying post-insert row counts...");
+  let verifyFailed = false;
+  for (const benchKey of automatedBenchmarks) {
+    const { count, error: countErr } = await supabase
+      .from("benchmark_scores")
+      .select("*", { count: "exact", head: true })
+      .eq("benchmark", benchKey);
+
+    if (countErr) {
+      console.error(`   VERIFY ERROR: Could not count rows for ${benchKey}: ${countErr.message}`);
+      verifyFailed = true;
+    } else if (count === 0) {
+      console.error(`   VERIFY FAILED: ${benchKey} has 0 rows after insert!`);
+      verifyFailed = true;
+    } else {
+      const expectedMin = LAB_KEYS.length * QUARTERS.length;
+      if (count < expectedMin) {
+        console.warn(`   VERIFY WARN: ${benchKey} has ${count} rows (expected >= ${expectedMin})`);
+      }
+    }
+  }
+  if (verifyFailed) {
+    console.error("\n   POST-INSERT VERIFICATION FAILED. The site may be showing incomplete data.");
+    console.error("   Re-run this script or investigate the benchmark_scores table.");
+  }
 
   // ─── Cost of Intelligence processing ────────────────────────
   console.log("\n4. Processing cost data...");
