@@ -9,9 +9,12 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@browserbasehq/stagehand": "^3.2.0",
     "@supabase/supabase-js": "^2.49.1",
     "@vercel/og": "^0.6.0",
     "adm-zip": "^0.5.16",
-    "csv-parse": "^5.6.0"
+    "csv-parse": "^5.6.0",
+    "sharp": "^0.34.5",
+    "zod": "^4.3.6"
   }
 }

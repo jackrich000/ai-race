@@ -3,3 +3,6 @@ node_modules/
 *.zip
 benchmark_data/
 .claude/
+prototype-output/
+prototype-screenshot*.png
+scripts/prototype-*.mjs
