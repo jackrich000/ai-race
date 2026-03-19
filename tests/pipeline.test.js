@@ -9,6 +9,7 @@ const {
   filterVerifiedDuplicates,
   computeCumulativeBest,
   computeCumulativeMin,
+  generateMatchVerifiedRegex,
   findCol,
 } = require("../lib/pipeline.js");
 
@@ -328,5 +329,46 @@ describe("findCol", () => {
 
   it("returns null with null preferred and no candidate matches", () => {
     expect(findCol(headers, null, ["x", "y", "z"])).toBeNull();
+  });
+});
+
+// ─── generateMatchVerifiedRegex ──────────────────────────────
+
+describe("generateMatchVerifiedRegex", () => {
+  it("matches the model name it was generated from", () => {
+    const re = generateMatchVerifiedRegex("GPT-5.4 Pro");
+    expect(re.test("GPT-5.4 Pro")).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    const re = generateMatchVerifiedRegex("GPT-5.4 Mini");
+    expect(re.test("gpt-5.4 mini")).toBe(true);
+    expect(re.test("GPT-5.4 MINI")).toBe(true);
+  });
+
+  it("handles version number separators flexibly", () => {
+    const re = generateMatchVerifiedRegex("Claude Sonnet 4.6");
+    expect(re.test("Claude Sonnet 4.6")).toBe(true);
+    expect(re.test("claude sonnet 4-6")).toBe(true);
+    expect(re.test("claude sonnet 4 6")).toBe(true);
+    expect(re.test("claude-sonnet-4.6")).toBe(true);
+  });
+
+  it("strips parenthetical suffixes like '(with tools)'", () => {
+    const re = generateMatchVerifiedRegex("GPT-5.4 Pro (with tools)");
+    expect(re.test("GPT-5.4 Pro")).toBe(true);
+    expect(re.test("gpt 5.4 pro")).toBe(true);
+  });
+
+  it("produces patterns that match real model names", () => {
+    expect(generateMatchVerifiedRegex("Gemini 3.1 Pro").test("Gemini 3.1 Pro")).toBe(true);
+    expect(generateMatchVerifiedRegex("Gemini 3 Deep Think").test("Gemini 3 Deep Think")).toBe(true);
+    expect(generateMatchVerifiedRegex("Claude Opus 4.6").test("claude opus 4.6")).toBe(true);
+  });
+
+  it("does not match unrelated models", () => {
+    const re = generateMatchVerifiedRegex("GPT-5.4 Pro");
+    expect(re.test("Claude Sonnet 4.6")).toBe(false);
+    expect(re.test("Gemini 3.1 Pro")).toBe(false);
   });
 });
