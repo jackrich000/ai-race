@@ -239,10 +239,18 @@ async function extractScoresFromArticle(stagehand, anthropic, url, modelName) {
     const viewportHeight = await page.evaluate(() => window.innerHeight);
 
     // For tall elements, take multiple viewport screenshots to cover the full element
-    const numShots = Math.min(Math.ceil(el.height / viewportHeight), 3);
+    // Each shot includes the header area (el.y - 150) so column headers stay visible
+    const headerY = Math.max(0, el.y - 150);
+    const contentHeight = el.height + 150; // element height plus header padding
+    const numShots = Math.min(Math.ceil(contentHeight / viewportHeight), 3);
 
     for (let shot = 0; shot < numShots; shot++) {
-    const scrollY = Math.max(0, el.y - 20 + shot * viewportHeight);
+    // First shot starts at the header; subsequent shots overlap to keep headers visible
+    // by advancing less than a full viewport height (viewport minus header overlap)
+    const headerOverlap = 120; // keep column headers visible in each shot
+    const scrollY = shot === 0
+      ? headerY
+      : headerY + (viewportHeight - headerOverlap) * shot;
     await page.evaluate((y) => window.scrollTo(0, y), scrollY);
     await new Promise(r => setTimeout(r, 300));
 
