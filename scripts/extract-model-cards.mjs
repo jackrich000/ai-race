@@ -39,7 +39,6 @@ const { createClient } = require("@supabase/supabase-js");
 const { LAB_SOURCES } = require("../lib/lab-sources.js");
 const { normalizeBenchmarkName, triageScore } = require("../lib/extraction.js");
 const { BENCHMARK_META } = require("../lib/config.js");
-const { modelNameToLab } = require("../lib/pipeline.js");
 const {
   extractRawImageUrl, filterContentImages, buildTextBlock,
   deduplicateScores, parsePublishDate,
