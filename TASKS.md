@@ -27,18 +27,24 @@ Waves 1-4 shipped. See git history for details.
 - [-] **Automated data pipeline** — Weekly automated refresh of all data sources + model card extraction from lab blogs. (2026-03-19)
   - [x] Phase 1: Test suite (Vitest + `lib/pipeline.js`, 77 tests) — PR #22, merged
   - [x] Phase 2: Data model + DB-driven model cards (migration, seed script, post-insert verification) — PR #23, merged
-  - [-] Phase 3: Model card extraction — PR #24, in progress. Core pipeline built, accuracy needs iteration:
-    - [x] Blog scanning + article classification (Haiku) working reliably
-    - [x] Element-targeted screenshots (tables/charts/figures) implemented
-    - [x] Benchmark normalization + triage logic with tests
-    - [-] Image capture quality: column headers missing from tall table screenshots (partially fixed with overlap, needs more work)
-    - [ ] Use Anthropic structured outputs for guaranteed JSON (`output_format: { type: "json_schema" }`)
-    - [ ] Set temperature: 0 for deterministic extraction
-    - [ ] Chain-of-thought grounding in vision prompt ("list column headers first")
-    - [ ] Reconciliation step: LLM picks best value when extract() and vision disagree (e.g., footnote 80.2 vs table 79.6)
-    - [ ] Test against 3-4 lab pages with manually verified ground truth (only Anthropic tested so far)
-    - [ ] Near 100% accuracy on test pages before merging
-  - [ ] Phase 4: GitHub Actions workflow + alerting (blocked on Phase 3)
+  - [-] Phase 3: Model card extraction — PR #25 (replaces old PR #24, now closed). Rewritten from scratch with clean module structure. (2026-03-20)
+    - [x] Clean module architecture: `lib/extraction.js` (pure helpers), `lib/llm-extract.js` (LLM calls), `scripts/extract-model-cards.mjs` (orchestrator)
+    - [x] 110 unit tests passing (48 new extraction tests)
+    - [x] Blog scanning + article classification (Haiku) working
+    - [x] Benchmark normalization (`normalizeBenchmarkName`) + triage (`triageScore`) with tests
+    - [x] All scores stored in `benchmark_raw` (tracked + untracked). Triage only affects curated pipeline.
+    - [x] Post-run GitHub Issue report (summary table, flagged scores, auto-ingested, untracked)
+    - [x] Browserbase integration for navigation (bypasses anti-bot on OpenAI, xAI)
+    - [x] Anthropic: 20+ scores extracted, all 16 ground truth scores present
+    - [-] **OpenAI: only 4/16 scores extracted**. Images download but vision returns 0. Text extraction gets 2. Needs investigation.
+    - [-] **xAI: 5 scores extracted (matches ground truth count)**. xAI uses SVG charts, not raster images — text+SVG extraction handles this. Need to verify exact values match ground truth.
+    - [ ] **Google DeepMind**: URL updated to `deepmind.google/discover/blog/`, not yet tested
+    - [ ] **Qwen**: SPA at `qwen.ai/blog`, not yet tested. Has HTML tables with benchmark data.
+    - [ ] **DeepSeek**: HuggingFace model cards, not a blog. Needs custom discovery logic. Has text-based HTML tables.
+    - [ ] Fix fabricated ground truth test file (`tests/extraction-ground-truth.test.js`) — rewrite with real data from `project_extraction_groundtruths.md`
+    - [ ] Near 100% accuracy on Anthropic + OpenAI + xAI before merging
+    - **Note**: Final prototype code (`test-extraction.mjs`) was never committed and is lost. Early prototypes (screenshot-based) still on disk as `scripts/prototype-*.mjs`. Current code implements the validated approach (DOM text + SVG text + CDN image download + LLM analysis, no screenshots) but cannot be diffed against the exact prototype.
+  - [ ] Phase 4: GitHub Actions workflow (blocked on Phase 3). Weekly Thursday night run. Must sync with verified data ingestion (`update-data.js`) so both sources are fresh before the site renders.
 - [ ] **Explore efficient manual benchmark entry** — MMMU/MMMU-Pro (multimodal) and OSWorld (computer use) would broaden capability coverage but lack automated data sources. Investigate lightweight manual entry workflows.
 - [ ] **Zoom to fit** — Chart automatically zooms to the time period where the selected benchmark is active, so you're not looking at empty space before/after it existed.
 - [ ] **Non-percentage benchmark visualizations** — Design a way to display benchmarks with non-% scoring (Elo, minutes, percentile). Candidates: METR Time Horizons, GDPval, Codeforces / LiveCodeBench Pro. Requires a different chart type or normalization approach.
