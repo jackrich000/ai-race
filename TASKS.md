@@ -36,14 +36,14 @@ Waves 1-4 shipped. See git history for details.
     - [x] Post-run GitHub Issue report (summary table, flagged scores, auto-ingested, untracked)
     - [x] Browserbase integration for navigation (bypasses anti-bot on OpenAI, xAI)
     - [x] Anthropic: 20+ scores extracted, all 16 ground truth scores present
-    - [-] **OpenAI: only 4/16 scores extracted**. Images download but vision returns 0. Text extraction gets 2. Needs investigation.
+    - [-] **OpenAI: only 4/16 scores extracted**. The 16 scores are in one large HTML table image. Likely root cause: prototype used Jack's local browser (100% accuracy), production uses Browserbase (cloud browser). The browser environment is the most likely cause of the difference — image may not render/load the same way.
     - [-] **xAI: 5 scores extracted (matches ground truth count)**. xAI uses SVG charts, not raster images — text+SVG extraction handles this. Need to verify exact values match ground truth.
     - [ ] **Google DeepMind**: URL updated to `deepmind.google/discover/blog/`, not yet tested
     - [ ] **Qwen**: SPA at `qwen.ai/blog`, not yet tested. Has HTML tables with benchmark data.
     - [ ] **DeepSeek**: HuggingFace model cards, not a blog. Needs custom discovery logic. Has text-based HTML tables.
     - [ ] Fix fabricated ground truth test file (`tests/extraction-ground-truth.test.js`) — rewrite with real data from `project_extraction_groundtruths.md`
     - [ ] Near 100% accuracy on Anthropic + OpenAI + xAI before merging
-    - **Note**: Final prototype code (`test-extraction.mjs`) was never committed and is lost. Early prototypes (screenshot-based) still on disk as `scripts/prototype-*.mjs`. Current code implements the validated approach (DOM text + SVG text + CDN image download + LLM analysis, no screenshots) but cannot be diffed against the exact prototype.
+    - **Note**: Final prototype code (`test-extraction.mjs`) was never committed and is lost. Early prototypes (screenshot-based) deleted 2026-03-20. Current code implements the validated approach (DOM text + SVG text + CDN image download + LLM analysis, no screenshots) but cannot be diffed against the exact prototype. The validated prototype used Jack's local browser, not Browserbase.
   - [ ] Phase 4: GitHub Actions workflow (blocked on Phase 3). Weekly Thursday night run. Must sync with verified data ingestion (`update-data.js`) so both sources are fresh before the site renders.
 - [ ] **Explore efficient manual benchmark entry** — MMMU/MMMU-Pro (multimodal) and OSWorld (computer use) would broaden capability coverage but lack automated data sources. Investigate lightweight manual entry workflows.
 - [ ] **Zoom to fit** — Chart automatically zooms to the time period where the selected benchmark is active, so you're not looking at empty space before/after it existed.
