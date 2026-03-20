@@ -9,7 +9,7 @@
 //   node scripts/extract-model-cards.mjs --lab anthropic         # Single lab only
 //   node scripts/extract-model-cards.mjs --force                 # Re-extract already-processed URLs
 //   node scripts/extract-model-cards.mjs --url <url> --model <name> --lab <name>  # Single article
-//   node scripts/extract-model-cards.mjs --headed                # Visible browser for debugging
+//   node scripts/extract-model-cards.mjs --local                 # Use local Playwright instead of Browserbase
 
 import fs from "fs";
 import path from "path";
@@ -55,11 +55,13 @@ import Anthropic from "@anthropic-ai/sdk";
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://jtrhsqdfevyqzzjjvcdr.supabase.co";
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const BROWSERBASE_API_KEY = process.env.BROWSERBASE_API_KEY;
+const BROWSERBASE_PROJECT_ID = process.env.BROWSERBASE_PROJECT_ID;
 
 // CLI flags
 const DRY_RUN = process.argv.includes("--dry-run");
 const FORCE = process.argv.includes("--force");
-const HEADED = process.argv.includes("--headed");
+const LOCAL_BROWSER = process.argv.includes("--local");
 
 const LAB_FILTER = (() => {
   const idx = process.argv.indexOf("--lab");
@@ -87,13 +89,49 @@ if (!ANTHROPIC_API_KEY) {
 
 // ─── Browser setup ───────────────────────────────────────────
 
+/**
+ * Launch browser via Browserbase (default) or local Playwright (--local flag).
+ * Browserbase matches the validated prototype approach: cloud browser that
+ * bypasses anti-bot protections, returns a standard Playwright Page object.
+ * All DOM extraction code works identically regardless of browser backend.
+ */
 async function launchBrowser() {
   const { chromium } = await import("playwright");
+
+  // Browserbase: cloud browser (validated prototype approach)
+  if (!LOCAL_BROWSER && BROWSERBASE_API_KEY && BROWSERBASE_PROJECT_ID) {
+    console.log("  Using Browserbase (cloud browser)...");
+
+    // Create a session via Browserbase REST API
+    const sessionResp = await fetch("https://api.browserbase.com/v1/sessions", {
+      method: "POST",
+      headers: {
+        "x-bb-api-key": BROWSERBASE_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ projectId: BROWSERBASE_PROJECT_ID }),
+    });
+    if (!sessionResp.ok) {
+      throw new Error(`Browserbase session creation failed: ${sessionResp.status} ${await sessionResp.text()}`);
+    }
+    const { id: sessionId } = await sessionResp.json();
+
+    // Connect via Chrome DevTools Protocol (gives us a standard Playwright Page)
+    const wsUrl = `wss://connect.browserbase.com?apiKey=${BROWSERBASE_API_KEY}&sessionId=${sessionId}`;
+    const browser = await chromium.connectOverCDP(wsUrl);
+    const context = browser.contexts()[0];
+    const page = context.pages()[0] || await context.newPage();
+    return { browser, context, page };
+  }
+
+  // Local Playwright fallback (for development/testing)
+  console.log("  Using local Playwright (headless)...");
+  if (!BROWSERBASE_API_KEY) {
+    console.warn("  Warning: No BROWSERBASE_API_KEY set. Some sites may block headless browsers.");
+  }
   const browser = await chromium.launch({
-    headless: !HEADED,
-    args: [
-      "--disable-blink-features=AutomationControlled",
-    ],
+    headless: true,
+    args: ["--disable-blink-features=AutomationControlled"],
   });
   const context = await browser.newContext({
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -110,7 +148,7 @@ async function launchBrowser() {
  */
 async function scanBlogIndex(page, source) {
   console.log(`   Scanning ${source.name} (${source.indexUrl})...`);
-  await page.goto(source.indexUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.goto(source.indexUrl, { waitUntil: "load", timeout: 45000 });
   await page.waitForTimeout(3000);
 
   let articles = await page.evaluate(() => {
@@ -141,13 +179,15 @@ async function scanBlogIndex(page, source) {
     return results;
   });
 
-  // Filter: same domain only, blog post paths
+  // Filter: same domain only, matching article path pattern for this source
   const sourceHost = new URL(source.indexUrl).hostname;
   articles = articles.filter(a => {
     try {
       const url = new URL(a.url);
       if (url.hostname !== sourceHost) return false;
-      return /\/(news|index|blog|research|updates|announcements)\/.+/.test(url.pathname);
+      if (source.articlePathPattern) return source.articlePathPattern.test(url.pathname);
+      // Fallback: common blog path patterns
+      return /\/(news|index|blog|research|updates|announcements|discover)\/.+/.test(url.pathname);
     } catch { return false; }
   });
 
@@ -161,7 +201,7 @@ async function scanBlogIndex(page, source) {
  * Extract all content from an article page: images, text sections, SVG data, publish date.
  */
 async function extractPageContent(page, url) {
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.goto(url, { waitUntil: "load", timeout: 45000 });
 
   // Scroll to bottom to trigger lazy loading
   await page.evaluate(async () => {
@@ -467,7 +507,7 @@ async function main() {
   }
 
   // Launch browser
-  console.log(`Launching browser (${HEADED ? "headed" : "headless"})...`);
+  console.log("Launching browser...");
   const { browser, page } = await launchBrowser();
 
   const newArticles = [];
