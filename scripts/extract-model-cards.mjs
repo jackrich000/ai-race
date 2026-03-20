@@ -644,38 +644,96 @@ async function main() {
     console.log("Step 4: Skipped (dry run).\n");
   }
 
-  // ─── Step 5: Create GitHub Issues for flagged scores ─────────
+  // ─── Step 5: Post-run report (GitHub Issue) ──────────────────
 
-  if (!DRY_RUN && flagged.length > 0) {
-    console.log(`\nStep 5: Creating ${flagged.length} GitHub Issue(s) for flagged scores...`);
+  if (!DRY_RUN && rawRows.length > 0) {
+    console.log("\nStep 5: Creating run report...");
 
-    for (const entry of flagged) {
-      const title = `[Auto] Review: ${entry.model} ${entry.benchmark} = ${entry.score}`;
-      const body = [
-        `**Model**: ${entry.model}`,
-        `**Benchmark**: ${entry.benchmark} (raw: "${entry.rawBenchmark}")`,
-        `**Score**: ${entry.score}`,
-        `**Current best**: ${currentBest[`${entry.benchmark}|${entry.lab}`] || "none"}`,
-        `**Source**: ${entry.source_url}`,
-        `**Reason**: ${entry.triageResult.reason}`,
-        "",
-        "Extracted automatically by the model card pipeline.",
-      ].join("\n");
+    const today = new Date().toISOString().split("T")[0];
+    const needsReview = flagged.length > 0;
+    const title = needsReview
+      ? `[Extraction] ${today}: ${rawRows.length} scores extracted (${flagged.length} need review)`
+      : `[Extraction] ${today}: ${rawRows.length} scores extracted`;
 
-      try {
-        const { execFileSync } = await import("child_process");
-        execFileSync("gh", ["issue", "create", "--title", title, "--body", body, "--label", "auto-triage"], {
-          cwd: path.resolve(__dirname, ".."),
-          stdio: "pipe",
-        });
-        console.log(`   Created issue: ${title}`);
-      } catch (err) {
-        console.warn(`   Failed to create issue: ${err.message.substring(0, 100)}`);
+    const bodyParts = [];
+
+    // Overview
+    bodyParts.push(`## Run Summary (${today})`);
+    bodyParts.push(`| Metric | Count |`);
+    bodyParts.push(`|--------|-------|`);
+    bodyParts.push(`| Articles processed | ${allExtracted.length} |`);
+    bodyParts.push(`| Total scores extracted | ${rawRows.length} |`);
+    bodyParts.push(`| Tracked: auto-ingested | ${ingested.length} |`);
+    bodyParts.push(`| Tracked: needs review | ${flagged.length} |`);
+    bodyParts.push(`| Tracked: rejected | ${rejected.length} |`);
+    bodyParts.push(`| Untracked (stored for future) | ${untrackedCount} |`);
+    bodyParts.push("");
+
+    // Needs Review section (if any)
+    if (flagged.length > 0) {
+      bodyParts.push("## Needs Review");
+      bodyParts.push("These scores were extracted but need human verification before they flow into the charts.");
+      bodyParts.push("");
+      for (const entry of flagged) {
+        const best = currentBest[`${entry.benchmark}|${entry.lab}`];
+        bodyParts.push(`- **${entry.model}** on **${entry.benchmark}**: ${entry.score} (current best: ${best || "none"})`);
+        bodyParts.push(`  Reason: ${entry.triageResult.reason} | [Source](${entry.source_url})`);
       }
+      bodyParts.push("");
+    }
+
+    // Auto-ingested section
+    if (ingested.length > 0) {
+      bodyParts.push("## Auto-Ingested");
+      bodyParts.push("These scores matched tracked benchmarks and passed triage. Stored in `benchmark_raw` as unverified.");
+      bodyParts.push("");
+      for (const s of ingested) {
+        bodyParts.push(`- ${s.model} | ${s.benchmark}: ${s.score} ([source](${s.source_url}))`);
+      }
+      bodyParts.push("");
+    }
+
+    // Articles processed
+    bodyParts.push("## Articles Processed");
+    for (const { article, scores } of allExtracted) {
+      bodyParts.push(`- [${article.title}](${article.url}): ${scores.length} scores`);
+    }
+    bodyParts.push("");
+
+    // Untracked scores (collapsed)
+    if (untrackedCount > 0) {
+      bodyParts.push("<details>");
+      bodyParts.push(`<summary>Untracked scores (${untrackedCount})</summary>`);
+      bodyParts.push("");
+      for (const row of rawRows) {
+        const normalized = normalizeBenchmarkName(row.raw_benchmark_name);
+        if (normalized.confidence === "none") {
+          bodyParts.push(`- ${row.model} | ${row.raw_benchmark_name}: ${row.score}`);
+        }
+      }
+      bodyParts.push("");
+      bodyParts.push("</details>");
+    }
+
+    bodyParts.push("");
+    bodyParts.push("*Generated automatically by the extraction pipeline.*");
+
+    const body = bodyParts.join("\n");
+    const labels = needsReview ? "extraction-report,needs-review" : "extraction-report";
+
+    try {
+      const { execFileSync } = await import("child_process");
+      execFileSync("gh", ["issue", "create", "--title", title, "--body", body, "--label", labels], {
+        cwd: path.resolve(__dirname, ".."),
+        stdio: "pipe",
+      });
+      console.log(`   Created report: ${title}`);
+    } catch (err) {
+      console.warn(`   Failed to create report: ${err.message.substring(0, 150)}`);
     }
   }
 
-  // ─── Step 6: Summary ─────────────────────────────────────────
+  // ─── Step 6: Console summary ───────────────────────────────
 
   console.log(`\n${"=".repeat(60)}`);
   console.log("  Summary");
