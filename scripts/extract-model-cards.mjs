@@ -193,6 +193,9 @@ async function scanBlogIndex(page, source) {
   });
 
   console.log(`   Found ${articles.length} article links via DOM`);
+  if (source.minExpectedArticles && articles.length < source.minExpectedArticles) {
+    console.warn(`   WARNING: Found ${articles.length} articles, expected at least ${source.minExpectedArticles}. Site structure may have changed.`);
+  }
   return articles;
 }
 
@@ -432,38 +435,33 @@ async function extractFromArticle(page, anthropic, url, modelName) {
   // Step 3: Build text block
   const textBlock = buildTextBlock(sections);
 
-  // Step 4: Run all LLM calls in parallel (vision on each image + text extraction)
-  const llmCalls = [];
-
-  // Vision calls: one per image
-  for (const img of downloadedImages) {
-    llmCalls.push(
-      extractScoresFromImage(anthropic, {
-        base64Data: img.base64Data,
-        mediaType: img.mediaType,
-        modelName,
-      }).catch(err => {
-        console.warn(`     Vision error on ${img.url.substring(0, 80)}: ${err.message.substring(0, 100)}`);
-        return [];
-      })
+  // Step 4: Run LLM calls (vision on each image + text extraction)
+  // Cap vision concurrency to avoid rate limits on pages with many images
+  const MAX_CONCURRENT_VISION = 5;
+  const visionScores = [];
+  for (let i = 0; i < downloadedImages.length; i += MAX_CONCURRENT_VISION) {
+    const batch = downloadedImages.slice(i, i + MAX_CONCURRENT_VISION);
+    const batchResults = await Promise.all(
+      batch.map(img =>
+        extractScoresFromImage(anthropic, {
+          base64Data: img.base64Data,
+          mediaType: img.mediaType,
+          modelName,
+        }).catch(err => {
+          console.warn(`     Vision error on ${img.url.substring(0, 80)}: ${err.message.substring(0, 100)}`);
+          return [];
+        })
+      )
     );
+    visionScores.push(...batchResults.flat());
   }
 
-  // Text call
-  const textCallIndex = llmCalls.length;
-  llmCalls.push(
-    extractScoresFromText(anthropic, { textContent: textBlock, modelName })
-      .catch(err => {
-        console.warn(`     Text extraction error: ${err.message.substring(0, 100)}`);
-        return [];
-      })
-  );
-
-  const results = await Promise.all(llmCalls);
-
-  // Collect vision scores (all calls except the last one)
-  const visionScores = results.slice(0, textCallIndex).flat();
-  const textScores = results[textCallIndex] || [];
+  // Text call (runs after vision to stay within rate limits)
+  const textScores = await extractScoresFromText(anthropic, { textContent: textBlock, modelName })
+    .catch(err => {
+      console.warn(`     Text extraction error: ${err.message.substring(0, 100)}`);
+      return [];
+    });
 
   console.log(`     Vision: ${visionScores.length} scores from ${downloadedImages.length} images`);
   console.log(`     Text: ${textScores.length} scores`);
@@ -544,7 +542,7 @@ async function main() {
     if (data) {
       for (const row of data) {
         const key = `${row.benchmark}|${row.lab}`;
-        if (!currentBest[key] || row.score > currentBest[key]) {
+        if (currentBest[key] == null || row.score > currentBest[key]) {
           currentBest[key] = row.score;
         }
       }
@@ -683,7 +681,7 @@ async function main() {
         const bestKey = `${normalized.key}|${lab}`;
         const result = triageScore(
           row.score,
-          currentBest[bestKey] || null,
+          currentBest[bestKey] ?? null,
           normalized.key,
           normalized.confidence
         );
@@ -701,7 +699,6 @@ async function main() {
       model_variant: r.row.model_variant,
     }));
     const crossFlags = crossCheckScores(trackedForCrossCheck);
-    const hasConflicts = crossFlags.length > 0;
     // Mark conflicts so the LLM review can see them, but don't flag yet — LLM will resolve or escalate
     for (const cf of crossFlags) {
       articleRows[cf.index]._conflictReason = cf.reason;
@@ -754,9 +751,13 @@ async function main() {
       }
     }
 
-    // Collect final triage results
+    // Collect final triage results and set triage_status on raw rows
     for (const { row, result } of articleRows) {
       const summary = `${row.model} on ${row.benchmark}: ${row.score}${row.model_variant ? ` [${row.model_variant}]` : ""} (${result.action}: ${result.reason})`;
+
+      // Map triage action to status stored in DB
+      const statusMap = { ingest: "ingest", review: "flag", reject: "reject" };
+      row.triage_status = statusMap[result.action] || null;
 
       if (result.action === "ingest") {
         ingested.push({ ...row, triageResult: result });

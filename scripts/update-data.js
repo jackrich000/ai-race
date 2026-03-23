@@ -109,14 +109,18 @@ const MODEL_CARD_DATA = [
 // ─── Source 7: Model cards from Supabase (DB-driven path) ────
 
 /**
- * Fetch model card data from benchmark_raw where source is 'model_card' or 'model_card_auto'.
+ * Fetch model card data from benchmark_raw.
+ * Includes manually seeded entries (source='model_card') and auto-extracted entries
+ * that passed triage (source='model_card_auto', triage_status='ingest').
  * Returns same shape as MODEL_CARD_DATA for drop-in replacement.
  */
 async function fetchModelCardData(supabase) {
+  // Manual seeds (source='model_card') don't have triage_status — include all.
+  // Auto-extracted (source='model_card_auto') — only include triaged 'ingest'.
   const { data, error } = await supabase
     .from("benchmark_raw")
     .select("benchmark, lab, model, score, date, source, verified")
-    .in("source", ["model_card", "model_card_auto"]);
+    .or("source.eq.model_card,and(source.eq.model_card_auto,triage_status.eq.ingest)");
 
   if (error) {
     console.warn("   [ModelCards] WARN: Failed to fetch from DB:", error.message);
