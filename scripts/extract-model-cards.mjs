@@ -206,10 +206,11 @@ async function scanBlogIndex(page, source) {
  * Extract all content from an article page: images, text sections, SVG data, publish date.
  */
 async function extractPageContent(page, url) {
-  await page.goto(url, { waitUntil: "load", timeout: 45000 });
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
 
-  // Wait for JS frameworks (React, Next.js) to hydrate
-  await page.waitForTimeout(3000);
+  // Wait for JS frameworks (React, Next.js) to hydrate.
+  // SPAs need more time than static sites; 6s covers OpenAI (Next.js) and xAI (React).
+  await page.waitForTimeout(6000);
 
   // Scroll to bottom to trigger lazy loading
   await page.evaluate(async () => {
@@ -624,14 +625,24 @@ async function main() {
     console.log("Step 2: Extracting scores from articles...\n");
 
     for (const article of newArticles) {
+      // Fresh browser context per article: prevents cookie/session state from
+      // triggering anti-bot protection on subsequent page loads (OpenAI, xAI).
+      const ctx = await browser.newContext({
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        viewport: { width: 1280, height: 720 },
+      });
+      const articlePage = await ctx.newPage();
+
       try {
         const { scores, publishDate } = await extractFromArticle(
-          page, anthropic, article.url, article.modelName
+          articlePage, anthropic, article.url, article.modelName
         );
         allExtracted.push({ article, scores, publishDate });
       } catch (err) {
         console.error(`   FAILED: ${article.title}: ${err.message.substring(0, 200)}`);
         allExtracted.push({ article, scores: [], publishDate: null });
+      } finally {
+        await ctx.close();
       }
     }
   } finally {
