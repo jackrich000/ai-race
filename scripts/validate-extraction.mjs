@@ -247,7 +247,7 @@ async function validateOne(browser, anthropic, gt) {
           modelName: gt.model,
         });
         visionScores.push(...scores);
-      } catch { /* skip failed images */ }
+      } catch (err) { console.warn(`    Image extraction failed: ${err.message.substring(0, 80)}`); }
     }
 
     // Extract from text
@@ -258,7 +258,7 @@ async function validateOne(browser, anthropic, gt) {
           textContent: textBlock,
           modelName: gt.model,
         });
-      } catch { /* skip failed text extraction */ }
+      } catch (err) { console.warn(`    Text extraction failed: ${err.message.substring(0, 80)}`); }
     }
 
     const allScores = deduplicateScores(visionScores, textScores);
@@ -337,12 +337,21 @@ async function main() {
 
   await browser.close();
 
+  const passed = results.filter(r => r.passed !== false && r.renderOk !== false);
   const failed = results.filter(r => r.passed === false || r.renderOk === false);
-  console.log(`\n${results.length - failed.length}/${results.length} passed.`);
+  console.log(`\n${passed.length}/${results.length} passed.`);
 
   if (failed.length > 0) {
-    console.error(`\nFailed: ${failed.map(f => f.lab).join(", ")}`);
+    console.error(`Failed: ${failed.map(f => f.lab).join(", ")}`);
+  }
+
+  // Fail if majority of labs broke (likely a systemic issue like Playwright or API failure).
+  // Single-lab failures are warnings, not blockers (the lab's page may have changed).
+  if (passed.length < 3) {
+    console.error("\nToo many failures — likely a systemic issue. Blocking pipeline.");
     process.exit(1);
+  } else if (failed.length > 0) {
+    console.warn("\nSome labs failed but majority passed. Pipeline will continue.");
   }
 }
 

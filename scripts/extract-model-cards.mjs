@@ -926,19 +926,20 @@ async function main() {
     const body = bodyParts.join("\n");
     const labels = needsReview ? "extraction-report,needs-review" : "extraction-report";
 
+    const tmpFile = path.resolve(__dirname, "../.extraction-report-body.md");
     try {
       // Write body to temp file to avoid shell escaping issues with markdown tables
-      const tmpFile = path.resolve(__dirname, "../.extraction-report-body.md");
       fs.writeFileSync(tmpFile, body, "utf8");
       const { execFileSync } = await import("child_process");
       execFileSync("gh", ["issue", "create", "--title", title, "--body-file", tmpFile, "--label", labels], {
         cwd: path.resolve(__dirname, ".."),
         stdio: "pipe",
       });
-      fs.unlinkSync(tmpFile);
       console.log(`   Created report: ${title}`);
     } catch (err) {
       console.warn(`   Failed to create report: ${err.message.substring(0, 150)}`);
+    } finally {
+      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
     }
   }
 

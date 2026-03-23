@@ -44,7 +44,7 @@ const SKIP_EXTRACT = process.argv.includes("--skip-extract");
 // Automated benchmarks (must match update-data.js)
 const AUTOMATED_BENCHMARKS = ["swe-bench-verified", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime", "frontiermath", "math-l5"];
 
-// Labs that have automated extraction (subset of LAB_KEYS — excludes "chinese" composite)
+// Labs that have automated extraction via model card scraping
 const EXTRACTED_LABS = ["openai", "anthropic", "google", "xai", "chinese"];
 
 // Staleness threshold: warn if a lab hasn't had new extraction data in this many weeks
@@ -109,6 +109,11 @@ function runScript(scriptPath, args, label) {
       const text = chunk.toString();
       stderr += text;
       process.stderr.write(text);
+    });
+
+    proc.on("error", (err) => {
+      console.error(`\n  ${label}: spawn error: ${err.message}`);
+      resolve({ code: 1, stdout, stderr: stderr + err.message });
     });
 
     proc.on("close", (code) => {
@@ -203,11 +208,10 @@ async function queryRejectedItems(supabase, runStartTime) {
  * Returns array of { lab, lastExtraction, stale } objects.
  */
 async function queryLabFreshness(supabase) {
-  const results = [];
   const staleThreshold = new Date();
   staleThreshold.setDate(staleThreshold.getDate() - STALENESS_WEEKS * 7);
 
-  for (const lab of EXTRACTED_LABS) {
+  const queries = EXTRACTED_LABS.map(async (lab) => {
     const { data, error } = await supabase
       .from("benchmark_raw")
       .select("extracted_at")
@@ -216,17 +220,13 @@ async function queryLabFreshness(supabase) {
       .order("extracted_at", { ascending: false })
       .limit(1);
 
-    if (error) {
-      results.push({ lab, lastExtraction: null, stale: true });
-      continue;
-    }
-
+    if (error) return { lab, lastExtraction: null, stale: true };
     const lastDate = data?.[0]?.extracted_at || null;
     const stale = !lastDate || new Date(lastDate) < staleThreshold;
-    results.push({ lab, lastExtraction: lastDate, stale });
-  }
+    return { lab, lastExtraction: lastDate, stale };
+  });
 
-  return results;
+  return Promise.all(queries);
 }
 
 /**
