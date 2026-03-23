@@ -13,9 +13,6 @@ Waves 1-4 shipped. See git history for details.
 
 ## Backlog
 
-- [x] **Review JP's codebase roast** — Go through JP's feedback and identify concrete, actionable improvements. Separate signal from noise. Quick wins shipped (2beec7e), bigger items logged as architectural debt. (2026-03-18)
-- [x] **Codebase walkthrough** — Guided tour of the codebase so Jack understands what each file/module does and how data flows end-to-end. (2026-03-18)
-
 - [ ] **Make site accessible to non-technical audiences** — Multiple improvements:
   - Better structure expanded benchmark descriptions in methodology section: clearly separate a) what the benchmark is from b) where we get the data
   - Label benchmarks on the chart for context (e.g. "SWE-Bench Pro (Coding)") so unfamiliar visitors know what they're looking at
@@ -24,27 +21,10 @@ Waves 1-4 shipped. See git history for details.
 - [ ] **Share best insights from the site on LinkedIn / Reddit** — Identify the most compelling data stories and package them for social sharing.
 - [ ] **Rethink aggregate view on Lab Race tab** — Hard to get a sense of who is really ahead when data is spread across 6 benchmark tabs. Need a way to show the overall picture.
 - [ ] **Differentiated branding / visual identity** — Come up with branding that could extend across apps, blog, slides. Opportunity to define a reusable visual identity. Explore testing the [frontend-design skill](https://github.com/anthropics/skills/blob/main/skills/frontend-design/SKILL.md) for this.
-- [x] **Automated data pipeline** — Weekly automated refresh of all data sources + model card extraction from lab blogs. (2026-03-23)
-  - [x] Phase 1: Test suite (Vitest + `lib/pipeline.js`, 77 tests) — PR #22, merged
-  - [x] Phase 2: Data model + DB-driven model cards (migration, seed script, post-insert verification) — PR #23, merged
-  - [x] Phase 3: Model card extraction — PR #25, merged
-  - [x] Phase 4: Pipeline orchestrator + GitHub Actions — PR #31, merged (2026-03-23)
-    - [x] Combined orchestrator (`scripts/run-pipeline.mjs`): extraction → ingestion → diff → combined GitHub issue report
-    - [x] GitHub Actions workflow: weekly Thursday 11 PM UTC cron + manual `workflow_dispatch` trigger
-    - [x] Combined report shows: flagged items (with rollover), auto-rejected, new scores on site (diff table)
-    - [x] Full pipeline test across all 5 labs: 32 articles processed, 16 review items resolved
-    - [x] Review workflow tested: Jack reviews GitHub issue, tells Claude Code what to ingest/reject/dismiss
-    - [x] AIME normalization fixed: only OTIS Mock variant matches, not generic AIME 2024/2025
-    - [x] Variant normalization: "no tools"/"without tools" treated as equivalent
-    - [x] Dynamic delete scope in ingestion: prevents duplicate key errors when new benchmarks enter via extraction
-    - [x] DB migration 005: `triage_reason` column (applied 2026-03-23)
-    - [x] 334 tests passing
-    - [x] CI verified: manual `workflow_dispatch` run succeeded, heartbeat report posted (issue #32)
-  - [ ] Phase 3b: Expand extraction to Qwen + other Chinese labs — Qwen (`qwen.ai/research`), Kimi/Moonshot, MiniMax, Zhipu/GLM, ByteDance. **Qwen issue**: SPA with no `<a href>` links; article discovery requires click-based navigation (titles are `<div>` elements with JS routing, URLs use `qwen.ai/blog?id={slug}` pattern). Other Chinese labs need blog/model card URLs identified.
-  - [ ] Future improvements:
-    - [ ] Skip analysis regeneration when no scores changed (saves ~$5-15/week in API credits)
-    - [ ] Monitor Google DeepMind URL pattern (`/gemini-models/`) — fragile if Google changes URL structure
-    - [ ] SWE-bench 80.2 variant extraction gap: LLM doesn't tag "with prompt modification" as model_variant, causing dedup loss
+- [ ] **Expand extraction to Chinese labs** — Add Qwen (`qwen.ai/research`), Kimi/Moonshot, MiniMax, Zhipu/GLM, ByteDance to the model card extraction pipeline. **Qwen issue**: SPA with no `<a href>` links; article discovery requires click-based navigation (titles are `<div>` elements with JS routing, URLs use `qwen.ai/blog?id={slug}` pattern). Other Chinese labs need blog/model card URLs identified.
+- [ ] **Skip analysis regeneration when no scores changed** — Gate `generate-analyses.js` on whether the ingestion diff is non-empty. Saves ~$5-15/week in API credits.
+- [ ] **Monitor Google DeepMind URL pattern** — Extraction relies on `/gemini-models/` URL pattern, which is fragile if Google changes their blog structure.
+- [ ] **Fix SWE-bench variant extraction gap** — LLM doesn't tag "with prompt modification" as `model_variant` for the 80.2 SWE-bench score, causing dedup loss.
 - [ ] **Explore efficient manual benchmark entry** — MMMU/MMMU-Pro (multimodal) and OSWorld (computer use) would broaden capability coverage but lack automated data sources. Investigate lightweight manual entry workflows.
 - [ ] **Zoom to fit** — Chart automatically zooms to the time period where the selected benchmark is active, so you're not looking at empty space before/after it existed.
 - [ ] **Non-percentage benchmark visualizations** — Design a way to display benchmarks with non-% scoring (Elo, minutes, percentile). Candidates: METR Time Horizons, GDPval, Codeforces / LiveCodeBench Pro. Requires a different chart type or normalization approach.
@@ -75,6 +55,13 @@ Waves 1-4 shipped. See git history for details.
 - [x] **Write LinkedIn post to announce site**
 - [x] **Redesign Cost Intelligence tab**
 - [x] **Add older saturated benchmarks**
+
+### Post-Launch
+
+- [x] **Review JP's codebase roast** — Feedback reviewed, quick wins shipped (2beec7e), bigger items logged as architectural debt. (2026-03-18)
+- [x] **Codebase walkthrough** — Guided tour so Jack understands file/module responsibilities and data flow. (2026-03-18)
+- [x] **Automated data pipeline** — Weekly automated refresh of all data sources + model card extraction from lab blogs. 4 phases: test suite (PR #22), data model (PR #23), extraction (PR #25), orchestrator + GitHub Actions (PR #31). 334 tests. (2026-03-23)
+- [x] **Fix SWE-bench Pro data wipe** — Pipeline's dynamic DELETE scope accidentally wiped manually-seeded data. Promoted swe-bench-pro to automated pipeline, restricted DELETE to static benchmark list. (2026-03-23)
 
 ### Other
 
