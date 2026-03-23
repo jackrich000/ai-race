@@ -63,6 +63,7 @@ const BROWSERBASE_PROJECT_ID = process.env.BROWSERBASE_PROJECT_ID;
 const DRY_RUN = process.argv.includes("--dry-run");
 const FORCE = process.argv.includes("--force");
 const LOCAL_BROWSER = process.argv.includes("--local");
+const NO_REPORT = process.argv.includes("--no-report");
 
 const LAB_FILTER = (() => {
   const idx = process.argv.indexOf("--lab");
@@ -758,6 +759,7 @@ async function main() {
       // Map triage action to status stored in DB
       const statusMap = { ingest: "ingest", review: "flag", reject: "reject" };
       row.triage_status = statusMap[result.action] || null;
+      row.triage_reason = result.reason || null;
 
       if (result.action === "ingest") {
         ingested.push({ ...row, triageResult: result });
@@ -825,7 +827,7 @@ async function main() {
 
   // ─── Step 5: Post-run report (GitHub Issue) ──────────────────
 
-  if (!DRY_RUN && rawRows.length > 0) {
+  if (!DRY_RUN && rawRows.length > 0 && !NO_REPORT) {
     console.log("\nStep 5: Creating run report...");
 
     const today = new Date().toISOString().split("T")[0];

@@ -820,19 +820,21 @@ async function main() {
     process.exit(1);
   }
 
-  // Delete only automated benchmark rows (preserves manual seeds like humaneval, swe-bench-pro)
+  // Delete rows for all benchmarks we're about to insert (covers both automated sources
+  // and any benchmark that gained model card data via extraction)
+  const benchmarksToReplace = [...new Set(allRows.map(r => r.benchmark))];
   console.log(`\n3. Replacing ${allRows.length} rows in Supabase (scoped delete + insert)...`);
 
   const { error: delError } = await supabase
     .from("benchmark_scores")
     .delete()
-    .in("benchmark", automatedBenchmarks);
+    .in("benchmark", benchmarksToReplace);
 
   if (delError) {
     console.error("   DELETE failed:", delError.message);
     process.exit(1);
   }
-  console.log(`   Deleted existing rows for automated benchmarks: ${automatedBenchmarks.join(", ")}`);
+  console.log(`   Deleted existing rows for benchmarks: ${benchmarksToReplace.join(", ")}`);
 
   // Insert in chunks of 500 to stay within Supabase limits
   for (let i = 0; i < allRows.length; i += BATCH_SIZE) {

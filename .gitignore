@@ -6,3 +6,5 @@ benchmark_data/
 prototype-output/
 prototype-screenshot*.png
 scripts/prototype-*.mjs
+.pipeline-report-body.md
+.extraction-report-body.md

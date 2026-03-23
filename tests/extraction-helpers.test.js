@@ -8,6 +8,7 @@ const {
   parsePublishDate,
   normalizeBenchmarkName,
   triageScore,
+  normalizeVariant,
 } = require("../lib/extraction.js");
 
 // ─── extractRawImageUrl ───────────────────────────────────────
@@ -249,7 +250,8 @@ describe("normalizeBenchmarkName", () => {
     expect(normalizeBenchmarkName("GPQA")).toEqual({ key: "gpqa", confidence: "fuzzy" });
     expect(normalizeBenchmarkName("ARC-AGI")).toEqual({ key: "arc-agi-1", confidence: "fuzzy" });
     expect(normalizeBenchmarkName("SWE-bench")).toEqual({ key: "swe-bench-verified", confidence: "fuzzy" });
-    expect(normalizeBenchmarkName("AIME")).toEqual({ key: "aime", confidence: "fuzzy" });
+    // "AIME" alone is NOT our OTIS Mock variant — should be untracked
+    expect(normalizeBenchmarkName("AIME")).toEqual({ key: null, confidence: "none" });
   });
 
   it("handles variant names", () => {
@@ -274,6 +276,16 @@ describe("normalizeBenchmarkName", () => {
     expect(normalizeBenchmarkName("MMLU")).toEqual({ key: null, confidence: "none" });
     expect(normalizeBenchmarkName("BrowseComp")).toEqual({ key: null, confidence: "none" });
     expect(normalizeBenchmarkName("Terminal-Bench 2.0")).toEqual({ key: null, confidence: "none" });
+  });
+
+  it("only matches OTIS Mock AIME, not generic AIME variants", () => {
+    expect(normalizeBenchmarkName("OTIS Mock AIME")).toEqual({ key: "aime", confidence: "exact" });
+    expect(normalizeBenchmarkName("OTIS Mock AIME 2024-2025")).toEqual({ key: "aime", confidence: "exact" });
+    expect(normalizeBenchmarkName("AIME (OTIS Mock)")).toEqual({ key: "aime", confidence: "exact" });
+    // Generic AIME variants should NOT match
+    expect(normalizeBenchmarkName("AIME").key).toBeNull();
+    expect(normalizeBenchmarkName("AIME 2024").key).toBeNull();
+    expect(normalizeBenchmarkName("AIME 2025").key).toBeNull();
   });
 
   it("returns confidence 'none' for null/empty input", () => {
@@ -356,6 +368,30 @@ describe("triageScore", () => {
 
 const { crossCheckScores } = require("../lib/extraction.js");
 
+// ─── normalizeVariant ─────────────────────────────────────────
+
+describe("normalizeVariant", () => {
+  it("normalizes 'no tools' to 'without tools'", () => {
+    expect(normalizeVariant("no tools")).toBe("without tools");
+    expect(normalizeVariant("No Tools")).toBe("without tools");
+    expect(normalizeVariant("NO TOOLS")).toBe("without tools");
+  });
+
+  it("passes through other variants unchanged (lowercased)", () => {
+    expect(normalizeVariant("with tools")).toBe("with tools");
+    expect(normalizeVariant("Thinking")).toBe("thinking");
+    expect(normalizeVariant("Python + Search")).toBe("python + search");
+  });
+
+  it("handles null/empty", () => {
+    expect(normalizeVariant(null)).toBe("");
+    expect(normalizeVariant("")).toBe("");
+    expect(normalizeVariant("  ")).toBe("");
+  });
+});
+
+// ─── crossCheckScores ─────────────────────────────────────────
+
 describe("crossCheckScores", () => {
   it("flags same benchmark + same variant + different scores", () => {
     const scores = [
@@ -399,6 +435,15 @@ describe("crossCheckScores", () => {
     const scores = [
       { benchmark: "hle", score: 33.2, model_variant: "without tools" },
       { benchmark: "hle", score: 49, model_variant: "with tools" },
+    ];
+    const flags = crossCheckScores(scores);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("treats 'no tools' and 'without tools' as the same variant", () => {
+    const scores = [
+      { benchmark: "hle", score: 48.4, model_variant: "no tools" },
+      { benchmark: "hle", score: 48.4, model_variant: "without tools" },
     ];
     const flags = crossCheckScores(scores);
     expect(flags).toHaveLength(0);
