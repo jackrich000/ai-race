@@ -829,6 +829,7 @@ async function main() {
 
     if (error) {
       console.error(`   benchmark_raw insert FAILED: ${error.message}`);
+      process.exit(1);
     } else {
       console.log(`   Stored ${dedupedRows.length} rows in benchmark_raw.`);
     }
