@@ -42,7 +42,7 @@ Waves 1-4 shipped. See git history for details.
     - [x] CI verified: manual `workflow_dispatch` run succeeded, heartbeat report posted (issue #32)
   - [ ] Phase 3b: Expand extraction to Qwen + other Chinese labs — Qwen (`qwen.ai/research`), Kimi/Moonshot, MiniMax, Zhipu/GLM, ByteDance. **Qwen issue**: SPA with no `<a href>` links; article discovery requires click-based navigation (titles are `<div>` elements with JS routing, URLs use `qwen.ai/blog?id={slug}` pattern). Other Chinese labs need blog/model card URLs identified.
   - [ ] Future improvements:
-    - [ ] Browser isolation per lab (single browser session currently shared; one blocked site hangs the pipeline)
+    - [ ] Skip analysis regeneration when no scores changed (saves ~$5-15/week in API credits)
     - [ ] Monitor Google DeepMind URL pattern (`/gemini-models/`) — fragile if Google changes URL structure
     - [ ] SWE-bench 80.2 variant extraction gap: LLM doesn't tag "with prompt modification" as model_variant, causing dedup loss
 - [ ] **Explore efficient manual benchmark entry** — MMMU/MMMU-Pro (multimodal) and OSWorld (computer use) would broaden capability coverage but lack automated data sources. Investigate lightweight manual entry workflows.
