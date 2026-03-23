@@ -27,24 +27,33 @@ Waves 1-4 shipped. See git history for details.
 - [-] **Automated data pipeline** — Weekly automated refresh of all data sources + model card extraction from lab blogs. (2026-03-19)
   - [x] Phase 1: Test suite (Vitest + `lib/pipeline.js`, 77 tests) — PR #22, merged
   - [x] Phase 2: Data model + DB-driven model cards (migration, seed script, post-insert verification) — PR #23, merged
-  - [-] Phase 3: Model card extraction — PR #25 (replaces old PR #24, now closed). Rewritten from scratch with clean module structure. (2026-03-20)
+  - [-] Phase 3: Model card extraction — PR #25. (2026-03-23)
     - [x] Clean module architecture: `lib/extraction.js` (pure helpers), `lib/llm-extract.js` (LLM calls), `scripts/extract-model-cards.mjs` (orchestrator)
-    - [x] 110 unit tests passing (48 new extraction tests)
-    - [x] Blog scanning + article classification (Haiku) working
+    - [x] 122 unit tests passing (including ground truth normalization tests for all 5 labs)
+    - [x] Structured outputs (tool use) for guaranteed valid JSON
+    - [x] Blog scanning + article classification (Haiku) working for Anthropic, OpenAI, xAI, Google DeepMind, DeepSeek
     - [x] Benchmark normalization (`normalizeBenchmarkName`) + triage (`triageScore`) with tests
     - [x] All scores stored in `benchmark_raw` (tracked + untracked). Triage only affects curated pipeline.
     - [x] Post-run GitHub Issue report (summary table, flagged scores, auto-ingested, untracked)
-    - [x] Browserbase integration for navigation (bypasses anti-bot on OpenAI, xAI)
-    - [x] Anthropic: 20+ scores extracted, all 16 ground truth scores present
-    - [-] **OpenAI: only 4/16 scores extracted**. The 16 scores are in one large HTML table image. Likely root cause: prototype used Jack's local browser (100% accuracy), production uses Browserbase (cloud browser). The browser environment is the most likely cause of the difference — image may not render/load the same way.
-    - [-] **xAI: 5 scores extracted (matches ground truth count)**. xAI uses SVG charts, not raster images — text+SVG extraction handles this. Need to verify exact values match ground truth.
-    - [ ] **Google DeepMind**: URL updated to `deepmind.google/discover/blog/`, not yet tested
-    - [ ] **Qwen**: SPA at `qwen.ai/blog`, not yet tested. Has HTML tables with benchmark data.
-    - [ ] **DeepSeek**: HuggingFace model cards, not a blog. Needs custom discovery logic. Has text-based HTML tables.
-    - [ ] Fix fabricated ground truth test file (`tests/extraction-ground-truth.test.js`) — rewrite with real data from `project_extraction_groundtruths.md`
-    - [ ] Near 100% accuracy on Anthropic + OpenAI + xAI before merging
-    - **Note**: Final prototype code (`test-extraction.mjs`) was never committed and is lost. Early prototypes (screenshot-based) deleted 2026-03-20. Current code implements the validated approach (DOM text + SVG text + CDN image download + LLM analysis, no screenshots) but cannot be diffed against the exact prototype. The validated prototype used Jack's local browser, not Browserbase.
-  - [ ] Phase 4: GitHub Actions workflow (blocked on Phase 3). Weekly Thursday night run. Must sync with verified data ingestion (`update-data.js`) so both sources are fresh before the site renders.
+    - [x] `swe-bench` key renamed to `swe-bench-verified` across all files
+    - [x] **Anthropic**: 16/16 ground truth scores, 100% accuracy
+    - [x] **OpenAI**: 16/16 ground truth scores, 100% accuracy (fixed: CSS selector, React hydration wait)
+    - [x] **xAI**: 5/5 ground truth scores, 100% accuracy (fixed: SVG chart container extraction)
+    - [x] **Google DeepMind**: 15/15 ground truth scores, 100% accuracy (blog.google, not deepmind.google)
+    - [x] **DeepSeek**: 14/14 ground truth scores, 100% accuracy (HuggingFace model cards)
+    - [x] Triage system: per-score rules (fuzzy match, >10pp jump), cross-score conflict detection, LLM variant review (resolves conflicts using page position + evaluation conditions, flags ambiguous cases for human review). Transparent reporting of LLM decisions.
+    - [x] Browserbase no longer needed — all 5 labs work with local headless Playwright (index pages + article pages)
+    - [x] DB migration 002: rename `swe-bench` → `swe-bench-verified` (applied 2026-03-23)
+    - [x] DB migrations 002-004 applied (swe-bench rename, triage columns, constraint drop)
+    - [x] Red team review: fixed triage_status data integrity, falsy score bug, rate limiting, dead code
+    - [x] Single article live run successful (Anthropic Sonnet 4.6: DB write + GitHub issue report working)
+    - [ ] Full pipeline test: run across all 5 labs, verify report covers both verified + unverified sources
+    - [ ] Report improvements: show which ingested scores are actually NEW to the site (not just confirming existing data)
+    - [ ] Test issue resolution workflow: review flagged scores from the GitHub issue, ingest or dismiss
+  - [ ] Phase 3b: Expand extraction to Qwen + other Chinese labs — Qwen (`qwen.ai/research`), Kimi/Moonshot, MiniMax, Zhipu/GLM, ByteDance. **Qwen issue**: SPA with no `<a href>` links; article discovery requires click-based navigation (titles are `<div>` elements with JS routing, URLs use `qwen.ai/blog?id={slug}` pattern). Other Chinese labs need blog/model card URLs identified.
+  - [ ] Phase 4: GitHub Actions workflow (blocked on Phase 3 merge). Weekly Thursday night run. Must sync with verified data ingestion (`update-data.js`) so both sources are fresh before the site renders.
+    - [ ] Browser isolation per lab (single browser session currently shared — one blocked site hangs the whole pipeline)
+    - [ ] Monitor Google DeepMind URL pattern (`/gemini-models/`) — fragile if Google changes URL structure
 - [ ] **Explore efficient manual benchmark entry** — MMMU/MMMU-Pro (multimodal) and OSWorld (computer use) would broaden capability coverage but lack automated data sources. Investigate lightweight manual entry workflows.
 - [ ] **Zoom to fit** — Chart automatically zooms to the time period where the selected benchmark is active, so you're not looking at empty space before/after it existed.
 - [ ] **Non-percentage benchmark visualizations** — Design a way to display benchmarks with non-% scoring (Elo, minutes, percentile). Candidates: METR Time Horizons, GDPval, Codeforces / LiveCodeBench Pro. Requires a different chart type or normalization approach.
