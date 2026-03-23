@@ -15,7 +15,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const require = createRequire(import.meta.url);
-const { BENCHMARK_META, LABS, LAB_KEYS } = require("../lib/config.js");
+const { BENCHMARK_META, LABS } = require("../lib/config.js");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -358,15 +358,6 @@ function postGitHubIssue(title, body, labels) {
   }
 }
 
-/**
- * Post a failure issue when the pipeline encounters a critical error.
- */
-function postFailureIssue(runDate, message) {
-  const title = `[Pipeline] ${runDate}: FAILED`;
-  const body = `## Pipeline Failure (${runDate})\n\n${message}\n\n---\n_Generated automatically by the pipeline orchestrator._`;
-  postGitHubIssue(title, body, "pipeline-report");
-}
-
 // ─── Main ────────────────────────────────────────────────────
 
 async function main() {
@@ -408,20 +399,22 @@ async function main() {
   }
 
   // ─── Step 3: Run ingestion ──────────────────────────────
-  const ingestArgs = [];
+  let ingestResult;
 
-  const ingestResult = await runScript(
-    path.resolve(__dirname, "update-data.js"),
-    ingestArgs,
-    "Step 3: Ingestion"
-  );
+  if (DRY_RUN) {
+    console.log("\nStep 3: Ingestion skipped (dry run)");
+    ingestResult = { code: 0 };
+  } else {
+    ingestResult = await runScript(
+      path.resolve(__dirname, "update-data.js"),
+      [],
+      "Step 3: Ingestion"
+    );
 
-  if (ingestResult.code !== 0) {
-    console.error("\n  Error: Ingestion failed.");
-    if (!DRY_RUN) {
-      postFailureIssue(runDate, `Ingestion exited with code ${ingestResult.code}. Data may be inconsistent. Check the pipeline logs.`);
+    if (ingestResult.code !== 0) {
+      console.error("\n  Error: Ingestion failed. Data may be inconsistent.");
+      process.exit(1);
     }
-    process.exit(1);
   }
 
   // ─── Step 4: Post-ingestion health check ────────────────
@@ -430,9 +423,6 @@ async function main() {
 
   if (healthFailures.length > 0) {
     console.error(`  Health check FAILED:\n    ${healthFailures.join("\n    ")}`);
-    if (!DRY_RUN) {
-      postFailureIssue(runDate, `Post-ingestion health check failed:\n${healthFailures.map(f => `- ${f}`).join("\n")}`);
-    }
     process.exit(1);
   }
   console.log("  Health check passed.");
