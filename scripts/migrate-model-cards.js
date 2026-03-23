@@ -31,7 +31,7 @@ const RAW_BENCHMARK_NAMES = {
   "gpqa":       "GPQA Diamond",
   "arc-agi-2":  "ARC-AGI-2",
   "arc-agi-1":  "ARC-AGI-1",
-  "swe-bench":  "SWE-bench Verified",
+  "swe-bench-verified":  "SWE-bench Verified",
 };
 
 // The 17 hardcoded model card entries (same data as MODEL_CARD_DATA in update-data.js)
@@ -44,13 +44,13 @@ const ENTRIES = [
 
   // Claude Sonnet 4.6
   { benchmark: "gpqa", lab: "anthropic", model: "Claude Sonnet 4.6", score: 89.9, date: "2026-02-17", modelFamily: "Claude Sonnet 4.6" },
-  { benchmark: "swe-bench", lab: "anthropic", model: "Claude Sonnet 4.6", score: 79.6, date: "2026-02-17", modelFamily: "Claude Sonnet 4.6" },
+  { benchmark: "swe-bench-verified", lab: "anthropic", model: "Claude Sonnet 4.6", score: 79.6, date: "2026-02-17", modelFamily: "Claude Sonnet 4.6" },
   { benchmark: "arc-agi-2", lab: "anthropic", model: "Claude Sonnet 4.6", score: 58.3, date: "2026-02-17", modelFamily: "Claude Sonnet 4.6" },
   { benchmark: "hle", lab: "anthropic", model: "Claude Sonnet 4.6 (with tools)", score: 49.0, date: "2026-02-17", modelFamily: "Claude Sonnet 4.6" },
 
   // Claude Opus 4.6
   { benchmark: "gpqa", lab: "anthropic", model: "Claude Opus 4.6", score: 91.3, date: "2026-03-01", modelFamily: "Claude Opus 4.6" },
-  { benchmark: "swe-bench", lab: "anthropic", model: "Claude Opus 4.6", score: 80.8, date: "2026-03-01", modelFamily: "Claude Opus 4.6" },
+  { benchmark: "swe-bench-verified", lab: "anthropic", model: "Claude Opus 4.6", score: 80.8, date: "2026-03-01", modelFamily: "Claude Opus 4.6" },
   { benchmark: "hle", lab: "anthropic", model: "Claude Opus 4.6 (with tools)", score: 53.0, date: "2026-03-01", modelFamily: "Claude Opus 4.6" },
   { benchmark: "arc-agi-2", lab: "anthropic", model: "Claude Opus 4.6", score: 68.8, date: "2026-03-01", modelFamily: "Claude Opus 4.6" },
 

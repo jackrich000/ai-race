@@ -21,7 +21,7 @@ const BENCHMARK_SOURCE_MAP = {
   "arc-agi-1":     "ARC Prize",
   "arc-agi-2":     "ARC Prize",
   "hle":           "Artificial Analysis",
-  "swe-bench":     "SWE-bench",
+  "swe-bench-verified": "SWE-bench",
   "swe-bench-pro": "Scale AI SEAL",
   "frontiermath":  "Epoch AI",
   "math-l5":       "Epoch AI",
@@ -80,7 +80,7 @@ const CATEGORY_COLORS = {
 
 // Distinct colors for each benchmark line in frontier mode
 const BENCHMARK_COLORS = {
-  "swe-bench":     "#10b981",
+  "swe-bench-verified": "#10b981",
   "arc-agi-1":     "#f59e0b",
   "arc-agi-2":     "#f97316",
   "hle":           "#8b5cf6",

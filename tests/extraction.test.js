@@ -1,19 +1,11 @@
-import { describe, it, expect } from "vitest";
+// Phase 3 extraction tests moved to extraction-helpers.test.js (full implementation).
+// This file kept as a redirect notice — all tests live in extraction-helpers.test.js now.
+// See also: extraction-ground-truth.test.js for integration tests.
 
-// Forward-looking tests for Phase 3 extraction functions.
-// normalizeBenchmarkName and triageScore will be filled in during Phase 3.
-// generateMatchVerifiedRegex tests are now in pipeline.test.js (implemented in Phase 2).
+import { describe, it } from "vitest";
 
-describe("normalizeBenchmarkName (placeholder)", () => {
-  it.todo("exact matches: 'GPQA Diamond' -> gpqa");
-  it.todo("fuzzy matches: 'GPQA' -> gpqa with fuzzy confidence");
-  it.todo("untracked benchmarks return confidence 'none'");
-});
-
-describe("triageScore (placeholder)", () => {
-  it.todo("auto-ingest: exact match, within 10pp of current best");
-  it.todo("auto-reject: untracked benchmark");
-  it.todo("auto-reject: nonsensical score (<0 or >100)");
-  it.todo("flag-for-review: >10pp above current best");
-  it.todo("flag-for-review: fuzzy benchmark match");
+describe("extraction tests", () => {
+  it("see extraction-helpers.test.js for normalizeBenchmarkName, triageScore, and other tests", () => {
+    // All extraction helper tests moved to extraction-helpers.test.js
+  });
 });
