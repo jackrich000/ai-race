@@ -74,7 +74,8 @@ describe("ground truth benchmark normalization", () => {
   it("normalizes DeepSeek V3.2-Exp benchmarks", () => {
     expect(normalizeBenchmarkName("GPQA-Diamond").key).toBe("gpqa");
     expect(normalizeBenchmarkName("Humanity's Last Exam").key).toBe("hle");
-    expect(normalizeBenchmarkName("AIME 2025").key).toBe("aime");
+    // "AIME 2025" is NOT our OTIS Mock variant — should be untracked
+    expect(normalizeBenchmarkName("AIME 2025").key).toBeNull();
 
     // Untracked
     expect(normalizeBenchmarkName("MMLU-Pro").key).toBeNull();
