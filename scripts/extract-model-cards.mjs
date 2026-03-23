@@ -37,7 +37,7 @@ if (fs.existsSync(envPath)) {
 // CJS imports
 const { createClient } = require("@supabase/supabase-js");
 const { LAB_SOURCES } = require("../lib/lab-sources.js");
-const { normalizeBenchmarkName, triageScore } = require("../lib/extraction.js");
+const { normalizeBenchmarkName, triageScore, crossCheckScores } = require("../lib/extraction.js");
 const { BENCHMARK_META } = require("../lib/config.js");
 const {
   extractRawImageUrl, filterContentImages, buildTextBlock,
@@ -45,6 +45,7 @@ const {
 } = require("../lib/extraction.js");
 const {
   extractScoresFromImage, extractScoresFromText, classifyArticles,
+  reviewVariants,
 } = require("../lib/llm-extract.js");
 
 // ESM imports
@@ -203,6 +204,9 @@ async function scanBlogIndex(page, source) {
 async function extractPageContent(page, url) {
   await page.goto(url, { waitUntil: "load", timeout: 45000 });
 
+  // Wait for JS frameworks (React, Next.js) to hydrate
+  await page.waitForTimeout(3000);
+
   // Scroll to bottom to trigger lazy loading
   await page.evaluate(async () => {
     const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -275,7 +279,8 @@ async function extractPageContent(page, url) {
   // Extract text sections with structure
   const sections = await page.evaluate(() => {
     const results = [];
-    const mainContent = document.querySelector("main, article, [class*='content'], [class*='post']") || document.body;
+    // Prefer semantic elements (main, article) over class-based matches
+    const mainContent = document.querySelector("main") || document.querySelector("article") || document.querySelector("[class*='content']") || document.querySelector("[class*='post']") || document.body;
 
     // Walk through direct children for structure
     const walker = document.createTreeWalker(mainContent, NodeFilter.SHOW_ELEMENT, null);
@@ -309,14 +314,39 @@ async function extractPageContent(page, url) {
     return results;
   });
 
-  // Extract SVG chart data (text elements within SVGs)
+  // Extract SVG chart data by finding containers that hold SVGs with text.
+  // Charts often split data across sibling SVGs (model names in one, scores in another,
+  // title in a parent div), so we extract the full container text to keep context together.
   const svgData = await page.evaluate(() => {
     const svgs = document.querySelectorAll("svg");
+    const svgsWithText = Array.from(svgs).filter(svg =>
+      Array.from(svg.querySelectorAll("text")).some(t => t.textContent.trim())
+    );
+    if (svgsWithText.length === 0) return [];
+
+    // For each SVG with text, walk up to find a container with chart context
+    const containers = new Set();
+    for (const svg of svgsWithText) {
+      let el = svg.parentElement;
+      let best = null;
+      for (let i = 0; i < 8 && el; i++) {
+        const text = el.textContent.trim();
+        // Look for a container that has meaningful content but isn't the whole page
+        if (text.length > 20 && text.length < 500) {
+          best = el;
+        }
+        el = el.parentElement;
+      }
+      if (best) containers.add(best);
+    }
+
+    // Deduplicate: if one container is a parent of another, keep only the parent
+    const containerArr = Array.from(containers);
     const results = [];
-    for (const svg of svgs) {
-      const texts = Array.from(svg.querySelectorAll("text")).map(t => t.textContent.trim()).filter(Boolean);
-      if (texts.length > 3) { // Only meaningful SVGs with data labels
-        results.push({ type: "svg-chart", content: texts.join(", ") });
+    for (const c of containerArr) {
+      const isChild = containerArr.some(other => other !== c && other.contains(c));
+      if (!isChild) {
+        results.push({ type: "svg-chart", content: c.textContent.trim() });
       }
     }
     return results;
@@ -437,6 +467,21 @@ async function extractFromArticle(page, anthropic, url, modelName) {
 
   console.log(`     Vision: ${visionScores.length} scores from ${downloadedImages.length} images`);
   console.log(`     Text: ${textScores.length} scores`);
+
+  // Debug: print raw scores before normalization
+  if (visionScores.length > 0) {
+    console.log(`\n     --- Raw vision scores ---`);
+    for (const s of visionScores) {
+      console.log(`     ${s.benchmark}: ${s.score}${s.model_variant ? ` [variant: ${s.model_variant}]` : ""}${s.notes ? ` [notes: ${s.notes}]` : ""}`);
+    }
+  }
+  if (textScores.length > 0) {
+    console.log(`\n     --- Raw text scores ---`);
+    for (const s of textScores) {
+      console.log(`     ${s.benchmark}: ${s.score}${s.model_variant ? ` [variant: ${s.model_variant}]` : ""}${s.notes ? ` [notes: ${s.notes}]` : ""}`);
+    }
+  }
+  console.log("");
 
   // Step 5: Deduplicate
   const deduped = deduplicateScores(visionScores, textScores);
@@ -610,13 +655,18 @@ async function main() {
       ? publishDate.toISOString().split("T")[0]
       : new Date().toISOString().split("T")[0];
 
+    // Build rows and run per-score triage
+    const articleRows = [];
+    const articleTriageResults = [];
+
     for (const s of scores) {
       const normalized = normalizeBenchmarkName(s.benchmark);
 
       const row = {
         benchmark: normalized.key || s.benchmark.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
         lab,
-        model: s.model_variant || article.modelName,
+        model: article.modelName,
+        model_variant: s.model_variant || null,
         score: Math.round(s.score * 10) / 10,
         date: scoreDate,
         source: "model_card_auto",
@@ -628,32 +678,95 @@ async function main() {
 
       rawRows.push(row);
 
-      // Triage tracked benchmarks
+      // Per-score triage (tracked benchmarks only)
       if (normalized.key && BENCHMARK_META[normalized.key]) {
         const bestKey = `${normalized.key}|${lab}`;
         const result = triageScore(
           row.score,
           currentBest[bestKey] || null,
           normalized.key,
-          normalized.confidence,
-          s.notes
+          normalized.confidence
         );
-
-        const summary = `${row.model} on ${row.benchmark}: ${row.score} (${result.action}: ${result.reason})`;
-
-        if (result.action === "ingest") {
-          ingested.push({ ...row, triageResult: result });
-          console.log(`   INGEST: ${summary}`);
-        } else if (result.action === "review") {
-          flagged.push({ ...row, triageResult: result, rawBenchmark: s.benchmark });
-          console.log(`   FLAG:   ${summary}`);
-        } else {
-          rejected.push({ ...row, triageResult: result });
-          console.log(`   REJECT: ${summary}`);
-        }
+        articleRows.push({ row, rawScore: s, result });
+        articleTriageResults.push(result);
       } else if (normalized.confidence === "none") {
-        // Untracked scores are still stored in benchmark_raw for future use
         console.log(`   SKIP:   ${row.model} on ${s.benchmark}: ${row.score} (untracked, stored in raw)`);
+      }
+    }
+
+    // Cross-score checks: detect conflicts within this article's tracked scores
+    const trackedForCrossCheck = articleRows.map(r => ({
+      benchmark: r.row.benchmark,
+      score: r.row.score,
+      model_variant: r.row.model_variant,
+    }));
+    const crossFlags = crossCheckScores(trackedForCrossCheck);
+    const hasConflicts = crossFlags.length > 0;
+    // Mark conflicts so the LLM review can see them, but don't flag yet — LLM will resolve or escalate
+    for (const cf of crossFlags) {
+      articleRows[cf.index]._conflictReason = cf.reason;
+    }
+
+    // LLM review: resolve conflicts + flag abnormal variants
+    if (scores.length > 0) {
+      try {
+        const llmDecisions = await reviewVariants(anthropic, scores, article.modelName);
+        for (const d of llmDecisions) {
+          const matchingRow = articleRows.find(r => r.rawScore === scores[d.index]);
+          if (!matchingRow) continue;
+
+          if (d.action === "reject") {
+            matchingRow.result = { action: "reject", reason: `LLM review: ${d.reason}` };
+          } else if (d.action === "flag") {
+            matchingRow.result = { action: "review", reason: `LLM review: ${d.reason}` };
+          }
+        }
+
+        // For conflicts detected by cross-check: if the LLM resolved them (rejected one side),
+        // clear the conflict flag on the surviving score. If not addressed, flag for human review.
+        for (const cf of crossFlags) {
+          const row = articleRows[cf.index];
+          if (!row._conflictReason) continue;
+
+          // Find the conflicting partner(s) for this score
+          const partners = crossFlags
+            .filter(other => other.index !== cf.index && other.reason === cf.reason)
+            .map(other => articleRows[other.index]);
+
+          // If all partners were rejected by LLM, this score's conflict is resolved
+          const allPartnersResolved = partners.every(p => p.result.action === "reject");
+
+          if (allPartnersResolved) {
+            // Conflict resolved — keep original triage result (ingest)
+          } else if (row.result.action === "ingest") {
+            // LLM didn't resolve this conflict — flag for human review
+            row.result = { action: "review", reason: row._conflictReason };
+          }
+        }
+      } catch (err) {
+        console.warn(`   Warning: LLM review failed: ${err.message.substring(0, 100)}`);
+        // Fallback: if LLM review fails, flag all conflicts for human review
+        for (const cf of crossFlags) {
+          if (articleRows[cf.index].result.action === "ingest") {
+            articleRows[cf.index].result = { action: "review", reason: cf.reason };
+          }
+        }
+      }
+    }
+
+    // Collect final triage results
+    for (const { row, result } of articleRows) {
+      const summary = `${row.model} on ${row.benchmark}: ${row.score}${row.model_variant ? ` [${row.model_variant}]` : ""} (${result.action}: ${result.reason})`;
+
+      if (result.action === "ingest") {
+        ingested.push({ ...row, triageResult: result });
+        console.log(`   INGEST: ${summary}`);
+      } else if (result.action === "review") {
+        flagged.push({ ...row, triageResult: result, rawBenchmark: row.raw_benchmark_name });
+        console.log(`   FLAG:   ${summary}`);
+      } else {
+        rejected.push({ ...row, triageResult: result });
+        console.log(`   REJECT: ${summary}`);
       }
     }
   }
@@ -716,6 +829,19 @@ async function main() {
       for (const entry of flagged) {
         const best = currentBest[`${entry.benchmark}|${entry.lab}`];
         bodyParts.push(`- **${entry.model}** on **${entry.benchmark}**: ${entry.score} (current best: ${best || "none"})`);
+        bodyParts.push(`  Reason: ${entry.triageResult.reason} | [Source](${entry.source_url})`);
+      }
+      bodyParts.push("");
+    }
+
+    // Auto-rejected section (LLM review decisions, for transparency)
+    const llmRejected = rejected.filter(r => r.triageResult.reason.startsWith("LLM review:"));
+    if (llmRejected.length > 0) {
+      bodyParts.push("## Auto-Rejected (LLM Review)");
+      bodyParts.push("These scores were automatically rejected by the LLM triage review. Listed here for transparency.");
+      bodyParts.push("");
+      for (const entry of llmRejected) {
+        bodyParts.push(`- **${entry.model}** on **${entry.benchmark}**: ${entry.score}${entry.model_variant ? ` [${entry.model_variant}]` : ""}`);
         bodyParts.push(`  Reason: ${entry.triageResult.reason} | [Source](${entry.source_url})`);
       }
       bodyParts.push("");

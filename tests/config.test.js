@@ -85,7 +85,7 @@ describe("isBenchmarkActive", () => {
 describe("BENCHMARK_META", () => {
   const expectedKeys = [
     "gpqa", "arc-agi-2", "hle", "swe-bench-pro", "aime", "frontiermath",
-    "humaneval", "arc-agi-1", "swe-bench", "math-l5",
+    "humaneval", "arc-agi-1", "swe-bench-verified", "math-l5",
   ];
 
   it("has all 10 expected benchmark keys", () => {

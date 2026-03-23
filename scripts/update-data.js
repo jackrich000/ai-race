@@ -67,7 +67,7 @@ const EPOCH_BENCHMARK_FILES = {
   "otis_mock_aime_2024_2025.csv": { key: "aime",      scoreCol: "mean_score" },
   "arc_agi_external.csv":         { key: "arc-agi-1",  scoreCol: "Score" },
   "arc_agi_2_external.csv":       { key: "arc-agi-2",  scoreCol: "Score" },
-  "swe_bench_verified.csv":       { key: "swe-bench",  scoreCol: "mean_score" },
+  "swe_bench_verified.csv":       { key: "swe-bench-verified", scoreCol: "mean_score" },
   "frontiermath.csv":             { key: "frontiermath", scoreCol: "mean_score" },
   "math_level_5.csv":             { key: "math-l5",      scoreCol: "mean_score" },
 };
@@ -84,13 +84,13 @@ const MODEL_CARD_DATA = [
 
   // Claude Sonnet 4.6 (https://www.anthropic.com/claude/sonnet, Feb 17 2026)
   { benchmark: "gpqa", lab: "anthropic", model: "Claude Sonnet 4.6", score: 89.9, date: new Date("2026-02-17"), source: "model_card", verified: false, matchVerified: /sonnet.?4[\.\s-]?6/i },
-  { benchmark: "swe-bench", lab: "anthropic", model: "Claude Sonnet 4.6", score: 79.6, date: new Date("2026-02-17"), source: "model_card", verified: false, matchVerified: /sonnet.?4[\.\s-]?6/i },
+  { benchmark: "swe-bench-verified", lab: "anthropic", model: "Claude Sonnet 4.6", score: 79.6, date: new Date("2026-02-17"), source: "model_card", verified: false, matchVerified: /sonnet.?4[\.\s-]?6/i },
   { benchmark: "arc-agi-2", lab: "anthropic", model: "Claude Sonnet 4.6", score: 58.3, date: new Date("2026-02-17"), source: "model_card", verified: false, matchVerified: /sonnet.?4[\.\s-]?6/i },
   { benchmark: "hle", lab: "anthropic", model: "Claude Sonnet 4.6 (with tools)", score: 49.0, date: new Date("2026-02-17"), source: "model_card", verified: false, matchVerified: /sonnet.?4[\.\s-]?6/i },
 
   // Claude Opus 4.6 (https://www.anthropic.com/news/claude-opus-4-6, March 2026)
   { benchmark: "gpqa", lab: "anthropic", model: "Claude Opus 4.6", score: 91.3, date: new Date("2026-03-01"), source: "model_card", verified: false, matchVerified: /opus.?4[\.\s-]?6/i },
-  { benchmark: "swe-bench", lab: "anthropic", model: "Claude Opus 4.6", score: 80.8, date: new Date("2026-03-01"), source: "model_card", verified: false, matchVerified: /opus.?4[\.\s-]?6/i },
+  { benchmark: "swe-bench-verified", lab: "anthropic", model: "Claude Opus 4.6", score: 80.8, date: new Date("2026-03-01"), source: "model_card", verified: false, matchVerified: /opus.?4[\.\s-]?6/i },
   { benchmark: "hle", lab: "anthropic", model: "Claude Opus 4.6 (with tools)", score: 53.0, date: new Date("2026-03-01"), source: "model_card", verified: false, matchVerified: /opus.?4[\.\s-]?6/i },
   { benchmark: "arc-agi-2", lab: "anthropic", model: "Claude Opus 4.6", score: 68.8, date: new Date("2026-03-01"), source: "model_card", verified: false, matchVerified: /opus.?4[\.\s-]?6/i },
 
@@ -339,7 +339,7 @@ async function fetchSWEBench() {
     if (!date || isNaN(date.getTime())) { skipped++; continue; }
 
     results.push({
-      benchmark: "swe-bench",
+      benchmark: "swe-bench-verified",
       lab,
       model: entry.name || "Unknown",
       score,
@@ -767,7 +767,7 @@ async function main() {
   // Emit null rows for benchmarks with NO data at all (e.g., if a source was down)
   // Benchmarks already in byBenchmark are fully handled by the cumulative-best loop above
   // Automated benchmarks (ingested from sources). Manual seeds (humaneval, swe-bench-pro) are excluded.
-  const automatedBenchmarks = ["swe-bench", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime", "frontiermath", "math-l5"];
+  const automatedBenchmarks = ["swe-bench-verified", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime", "frontiermath", "math-l5"];
   const allBenchmarks = automatedBenchmarks;
   for (const benchKey of allBenchmarks) {
     if (byBenchmark[benchKey]) continue; // Already processed above

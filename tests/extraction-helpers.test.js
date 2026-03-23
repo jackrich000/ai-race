@@ -238,7 +238,7 @@ describe("normalizeBenchmarkName", () => {
     expect(normalizeBenchmarkName("GPQA Diamond")).toEqual({ key: "gpqa", confidence: "exact" });
     expect(normalizeBenchmarkName("ARC-AGI-2")).toEqual({ key: "arc-agi-2", confidence: "exact" });
     expect(normalizeBenchmarkName("HLE")).toEqual({ key: "hle", confidence: "exact" });
-    expect(normalizeBenchmarkName("SWE-bench Verified")).toEqual({ key: "swe-bench", confidence: "exact" });
+    expect(normalizeBenchmarkName("SWE-bench Verified")).toEqual({ key: "swe-bench-verified", confidence: "exact" });
     expect(normalizeBenchmarkName("SWE-bench Pro")).toEqual({ key: "swe-bench-pro", confidence: "exact" });
     expect(normalizeBenchmarkName("FrontierMath")).toEqual({ key: "frontiermath", confidence: "exact" });
     expect(normalizeBenchmarkName("MATH Level 5")).toEqual({ key: "math-l5", confidence: "exact" });
@@ -248,7 +248,7 @@ describe("normalizeBenchmarkName", () => {
   it("fuzzy matches partial names", () => {
     expect(normalizeBenchmarkName("GPQA")).toEqual({ key: "gpqa", confidence: "fuzzy" });
     expect(normalizeBenchmarkName("ARC-AGI")).toEqual({ key: "arc-agi-1", confidence: "fuzzy" });
-    expect(normalizeBenchmarkName("SWE-bench")).toEqual({ key: "swe-bench", confidence: "fuzzy" });
+    expect(normalizeBenchmarkName("SWE-bench")).toEqual({ key: "swe-bench-verified", confidence: "fuzzy" });
     expect(normalizeBenchmarkName("AIME")).toEqual({ key: "aime", confidence: "fuzzy" });
   });
 
@@ -291,69 +291,116 @@ describe("normalizeBenchmarkName", () => {
 
 describe("triageScore", () => {
   it("auto-ingest: exact match, within range of current best", () => {
-    const result = triageScore(90, 85, "gpqa", "exact", "");
+    const result = triageScore(90, 85, "gpqa", "exact");
     expect(result.action).toBe("ingest");
   });
 
   it("auto-ingest: exact match, no current best", () => {
-    const result = triageScore(50, null, "hle", "exact", "");
+    const result = triageScore(50, null, "hle", "exact");
     expect(result.action).toBe("ingest");
   });
 
   it("auto-reject: untracked benchmark (confidence=none)", () => {
-    const result = triageScore(80, null, null, "none", "");
+    const result = triageScore(80, null, null, "none");
     expect(result.action).toBe("reject");
     expect(result.reason).toContain("untracked");
   });
 
   it("auto-reject: null benchmark key", () => {
-    const result = triageScore(80, null, null, "none", "");
+    const result = triageScore(80, null, null, "none");
     expect(result.action).toBe("reject");
   });
 
   it("accepts scores outside 0-100 range (Elo, raw counts, etc.)", () => {
-    const result1 = triageScore(1633, null, "gpqa", "exact", "");
+    const result1 = triageScore(1633, null, "gpqa", "exact");
     expect(result1.action).toBe("ingest");
 
-    const result2 = triageScore(-5, null, "gpqa", "exact", "");
+    const result2 = triageScore(-5, null, "gpqa", "exact");
     expect(result2.action).toBe("ingest");
   });
 
   it("flag for review: >10pp above current best", () => {
-    const result = triageScore(96, 85, "gpqa", "exact", "");
+    const result = triageScore(96, 85, "gpqa", "exact");
     expect(result.action).toBe("review");
     expect(result.reason).toContain(">10pp");
   });
 
   it("flag for review: fuzzy benchmark match", () => {
-    const result = triageScore(80, 85, "gpqa", "fuzzy", "");
+    const result = triageScore(80, 85, "gpqa", "fuzzy");
     expect(result.action).toBe("review");
     expect(result.reason).toContain("fuzzy");
   });
 
-  it("flag for review: harness qualifier detected", () => {
-    const result = triageScore(80, 85, "gpqa", "exact", "with tools");
-    expect(result.action).toBe("review");
-    expect(result.reason).toContain("harness");
-  });
-
   it("does not flag for exactly 10pp above", () => {
-    const result = triageScore(95, 85, "gpqa", "exact", "");
+    const result = triageScore(95, 85, "gpqa", "exact");
     expect(result.action).toBe("ingest");
   });
 
   it("does not flag for 10.1pp above", () => {
-    const result = triageScore(95.1, 85, "gpqa", "exact", "");
+    const result = triageScore(95.1, 85, "gpqa", "exact");
     expect(result.action).toBe("review");
   });
 
   it("allows score of exactly 0", () => {
-    const result = triageScore(0, null, "arc-agi-2", "exact", "");
+    const result = triageScore(0, null, "arc-agi-2", "exact");
     expect(result.action).toBe("ingest");
   });
 
   it("allows score of exactly 100", () => {
-    const result = triageScore(100, 90, "humaneval", "exact", "");
+    const result = triageScore(100, 90, "humaneval", "exact");
     expect(result.action).toBe("ingest");
+  });
+});
+
+// ─── crossCheckScores ────────────────────────────────────────
+
+const { crossCheckScores } = require("../lib/extraction.js");
+
+describe("crossCheckScores", () => {
+  it("flags same benchmark + same variant + different scores", () => {
+    const scores = [
+      { benchmark: "swe-bench-verified", score: 79.6, model_variant: null },
+      { benchmark: "swe-bench-verified", score: 80.2, model_variant: null },
+    ];
+    const flags = crossCheckScores(scores);
+    expect(flags).toHaveLength(2);
+    expect(flags[0].reason).toContain("different scores");
+  });
+
+  it("flags same benchmark + same score + different variants", () => {
+    const scores = [
+      { benchmark: "arc-agi-2", score: 60.4, model_variant: "max effort" },
+      { benchmark: "arc-agi-2", score: 60.4, model_variant: "high effort" },
+    ];
+    const flags = crossCheckScores(scores);
+    expect(flags).toHaveLength(2);
+    expect(flags[0].reason).toContain("different variants");
+  });
+
+  it("does not flag different benchmarks with same score", () => {
+    const scores = [
+      { benchmark: "gpqa", score: 89.9, model_variant: null },
+      { benchmark: "hle", score: 89.9, model_variant: null },
+    ];
+    const flags = crossCheckScores(scores);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("does not flag same benchmark with same score and same variant", () => {
+    const scores = [
+      { benchmark: "gpqa", score: 89.9, model_variant: null },
+      { benchmark: "gpqa", score: 89.9, model_variant: null },
+    ];
+    const flags = crossCheckScores(scores);
+    expect(flags).toHaveLength(0);
+  });
+
+  it("does not flag same benchmark with different scores and different variants", () => {
+    const scores = [
+      { benchmark: "hle", score: 33.2, model_variant: "without tools" },
+      { benchmark: "hle", score: 49, model_variant: "with tools" },
+    ];
+    const flags = crossCheckScores(scores);
+    expect(flags).toHaveLength(0);
   });
 });
