@@ -784,14 +784,40 @@ async function main() {
   if (!DRY_RUN && supabase && rawRows.length > 0) {
     console.log("Step 4: Storing in benchmark_raw...\n");
 
+    // Deduplicate rows by composite key
+    const rowKey = r => `${r.benchmark}|${r.lab}|${r.model}|${r.model_variant || ""}|${r.source}`;
+    const seen = new Set();
+    const dedupedRows = rawRows.filter(r => {
+      const key = rowKey(r);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    if (dedupedRows.length < rawRows.length) {
+      console.log(`   Deduped ${rawRows.length} → ${dedupedRows.length} rows (removed ${rawRows.length - dedupedRows.length} duplicates)`);
+    }
+
+    // Delete existing rows for these source URLs, then insert fresh.
+    // Avoids upsert conflict issues when model_variant creates multiple rows
+    // with the same (benchmark, lab, model, source) key.
+    const sourceUrls = [...new Set(dedupedRows.map(r => r.source_url).filter(Boolean))];
+    for (const url of sourceUrls) {
+      await supabase
+        .from("benchmark_raw")
+        .delete()
+        .eq("source", "model_card_auto")
+        .eq("source_url", url);
+    }
+
     const { error } = await supabase
       .from("benchmark_raw")
-      .upsert(rawRows, { onConflict: "benchmark,lab,model,source" });
+      .insert(dedupedRows);
 
     if (error) {
-      console.error(`   benchmark_raw upsert FAILED: ${error.message}`);
+      console.error(`   benchmark_raw insert FAILED: ${error.message}`);
     } else {
-      console.log(`   Stored ${rawRows.length} rows in benchmark_raw.`);
+      console.log(`   Stored ${dedupedRows.length} rows in benchmark_raw.`);
     }
   } else if (DRY_RUN) {
     console.log("Step 4: Skipped (dry run).\n");
@@ -888,11 +914,15 @@ async function main() {
     const labels = needsReview ? "extraction-report,needs-review" : "extraction-report";
 
     try {
+      // Write body to temp file to avoid shell escaping issues with markdown tables
+      const tmpFile = path.resolve(__dirname, "../.extraction-report-body.md");
+      fs.writeFileSync(tmpFile, body, "utf8");
       const { execFileSync } = await import("child_process");
-      execFileSync("gh", ["issue", "create", "--title", title, "--body", body, "--label", labels], {
+      execFileSync("gh", ["issue", "create", "--title", title, "--body-file", tmpFile, "--label", labels], {
         cwd: path.resolve(__dirname, ".."),
         stdio: "pipe",
       });
+      fs.unlinkSync(tmpFile);
       console.log(`   Created report: ${title}`);
     } catch (err) {
       console.warn(`   Failed to create report: ${err.message.substring(0, 150)}`);
