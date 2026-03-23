@@ -47,12 +47,23 @@ const curQStart = new Date(now.getFullYear(), (curQ - 1) * 3, 1);
 const curQEnd = new Date(now.getFullYear(), curQ * 3, 0);
 const CURRENT_QUARTER_DATE = new Date((curQStart.getTime() + curQEnd.getTime()) / 2);
 
+/** Derive approximate date from quarter string (midpoint of quarter). */
+function quarterMidDate(quarter) {
+  const qNum = parseInt(quarter[1]);
+  const year = parseInt(quarter.substring(3));
+  const startMonth = (qNum - 1) * 3;
+  const start = new Date(year, startMonth, 1);
+  const end = new Date(year, startMonth + 3, 0);
+  return new Date((start.getTime() + end.getTime()) / 2);
+}
+
 // Earliest valid quarter per benchmark (scores before this are nulled out).
 // Prevents retroactive evaluations from appearing before a benchmark existed.
 const BENCHMARK_START_QUARTER = {
-  "hle":       "Q1 2025",  // Released January 2025
-  "gpqa":      "Q4 2023",  // Published November 2023
-  "arc-agi-2": "Q1 2025",  // Released as part of ARC Prize 2025
+  "hle":           "Q1 2025",  // Released January 2025
+  "gpqa":          "Q4 2023",  // Published November 2023
+  "arc-agi-2":     "Q1 2025",  // Released as part of ARC Prize 2025
+  "swe-bench-pro": "Q3 2025",  // Scale AI SEAL leaderboard launched
 };
 
 // Cost of Intelligence: benchmarks with price thresholds
@@ -106,7 +117,18 @@ const MODEL_CARD_DATA = [
   { benchmark: "arc-agi-2", lab: "google", model: "Gemini 3.1 Pro", score: 77.1, date: new Date("2026-02-19"), source: "model_card", verified: false, matchVerified: /gemini.?3[\.\s-]?1.?pro/i },
 ];
 
-// ─── Source 7: Model cards from Supabase (DB-driven path) ────
+// ─── Source 7: SWE-bench Pro seed data (Scale AI SEAL leaderboard) ────
+// Manually curated from https://scale.com/leaderboard — SWE-Bench Pro (Public Dataset).
+// No automated source exists for this benchmark yet; new scores arrive via model card extraction.
+const SWEBENCH_PRO_SEED = [
+  { benchmark: "swe-bench-pro", lab: "anthropic", model: "Claude 4.5 Sonnet", score: 43.6, date: quarterMidDate("Q3 2025"), source: "manual", verified: true },
+  { benchmark: "swe-bench-pro", lab: "anthropic", model: "Claude Opus 4.5", score: 45.9, date: quarterMidDate("Q4 2025"), source: "manual", verified: true },
+  { benchmark: "swe-bench-pro", lab: "google", model: "Gemini 3 Pro", score: 43.3, date: quarterMidDate("Q4 2025"), source: "manual", verified: true },
+  { benchmark: "swe-bench-pro", lab: "openai", model: "GPT-5", score: 41.8, date: quarterMidDate("Q4 2025"), source: "manual", verified: true },
+  { benchmark: "swe-bench-pro", lab: "openai", model: "GPT-5.4", score: 57.7, date: new Date("2026-03-05"), source: "model_card", verified: false },
+];
+
+// ─── Source 8: Model cards from Supabase (DB-driven path) ────
 
 /**
  * Fetch model card data from benchmark_raw.
@@ -706,7 +728,7 @@ async function main() {
     console.log(`   Using ${MODEL_CARD_DATA.length} hardcoded model card entries (DB fallback)`);
   }
 
-  const allMerged = [...aaData, ...sweData, ...arcData, ...epochData, ...modelCardData];
+  const allMerged = [...aaData, ...sweData, ...arcData, ...epochData, ...modelCardData, ...SWEBENCH_PRO_SEED];
   const allFiltered = filterVerifiedDuplicates(allMerged);
 
   const byBenchmark = {}; // { benchKey: { labKey: [dataPoints] } }
@@ -743,10 +765,15 @@ async function main() {
     console.log(`   benchmark_raw: upserted ${rawRows.length} rows.`);
   }
 
+  // Automated benchmarks managed by this script. Manual seeds (humaneval) are excluded.
+  const automatedBenchmarks = ["swe-bench-verified", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime", "frontiermath", "math-l5", "swe-bench-pro"];
+
   // Compute cumulative best per (benchmark, lab) and build upsert rows
   const allRows = [];
 
   for (const [benchKey, labsData] of Object.entries(byBenchmark)) {
+    // Skip non-automated benchmarks to prevent them from entering allRows/DELETE scope
+    if (!automatedBenchmarks.includes(benchKey)) continue;
     for (const lab of LAB_KEYS) {
       const points = labsData[lab] || [];
       const cumulBest = computeCumulativeBest(points, QUARTERS);
@@ -770,8 +797,6 @@ async function main() {
 
   // Emit null rows for benchmarks with NO data at all (e.g., if a source was down)
   // Benchmarks already in byBenchmark are fully handled by the cumulative-best loop above
-  // Automated benchmarks (ingested from sources). Manual seeds (humaneval, swe-bench-pro) are excluded.
-  const automatedBenchmarks = ["swe-bench-verified", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime", "frontiermath", "math-l5"];
   const allBenchmarks = automatedBenchmarks;
   for (const benchKey of allBenchmarks) {
     if (byBenchmark[benchKey]) continue; // Already processed above
@@ -820,9 +845,8 @@ async function main() {
     process.exit(1);
   }
 
-  // Delete rows for all benchmarks we're about to insert (covers both automated sources
-  // and any benchmark that gained model card data via extraction)
-  const benchmarksToReplace = [...new Set(allRows.map(r => r.benchmark))];
+  // Delete only automated benchmarks — manual seeds (humaneval) are never touched
+  const benchmarksToReplace = automatedBenchmarks;
   console.log(`\n3. Replacing ${allRows.length} rows in Supabase (scoped delete + insert)...`);
 
   const { error: delError } = await supabase

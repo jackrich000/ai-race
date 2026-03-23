@@ -1,5 +1,6 @@
 // scripts/seed-manual.js
-// One-time seed for manually-curated benchmark data (HumanEval + SWE-bench Pro).
+// One-time seed for manually-curated benchmark data (HumanEval).
+// SWE-bench Pro was moved to update-data.js (automated pipeline) in March 2026.
 // These are not auto-ingested — the ingestion script's scoped DELETE preserves them.
 // Produces cumulative-best rows (running max per lab per quarter, same as auto-ingestion).
 //
@@ -38,17 +39,6 @@ const HUMANEVAL_RAW = [
   { lab: "google", quarter: "Q4 2024", score: 89.5, model: "Gemini 2.0 Flash", verified: true },
   { lab: "chinese", quarter: "Q4 2024", score: 97.3, model: "DeepSeek-V3", verified: true },
   { lab: "xai", quarter: "Q4 2024", score: 74.1, model: "Grok-2", verified: true },
-];
-
-// ─── SWE-bench Pro data (Scale AI SEAL leaderboard, Jan 2026) ──
-// Source: https://scale.com/leaderboard — SWE-Bench Pro (Public Dataset)
-const SWEBENCH_PRO_RAW = [
-  { lab: "anthropic", quarter: "Q3 2025", score: 43.6, model: "Claude 4.5 Sonnet", verified: true },
-  { lab: "anthropic", quarter: "Q4 2025", score: 45.9, model: "Claude Opus 4.5", verified: true },
-  { lab: "google", quarter: "Q4 2025", score: 43.3, model: "Gemini 3 Pro", verified: true },
-  { lab: "openai", quarter: "Q4 2025", score: 41.8, model: "GPT-5", verified: true },
-  // GPT-5.4 model card (https://openai.com/index/introducing-gpt-5-4/, March 5 2026)
-  { lab: "openai", quarter: "Q1 2026", score: 57.7, model: "GPT-5.4", verified: false, source: "model_card" },
 ];
 
 /**
@@ -140,16 +130,14 @@ function quarterMidDate(quarter) {
 }
 
 async function main() {
-  console.log("Deleting existing humaneval and swe-bench-pro rows...");
-  await supabaseRequest("DELETE", "/rest/v1/benchmark_scores?benchmark=in.(humaneval,swe-bench-pro)");
+  console.log("Deleting existing humaneval rows...");
+  await supabaseRequest("DELETE", "/rest/v1/benchmark_scores?benchmark=in.(humaneval)");
 
   const humanEvalRows = computeCumulativeBestRows(HUMANEVAL_RAW, "humaneval", "Q1 2023");
-  const sweProRows = computeCumulativeBestRows(SWEBENCH_PRO_RAW, "swe-bench-pro", "Q3 2025");
-  const allRows = [...humanEvalRows, ...sweProRows];
+  const allRows = humanEvalRows;
 
   // Summary
   console.log(`HumanEval: ${humanEvalRows.length} rows (${humanEvalRows.filter(r => r.score !== null).length} non-null)`);
-  console.log(`SWE-bench Pro: ${sweProRows.length} rows (${sweProRows.filter(r => r.score !== null).length} non-null)`);
 
   console.log(`Inserting ${allRows.length} rows...`);
 
@@ -163,7 +151,6 @@ async function main() {
   // Write raw observations to benchmark_raw (audit trail)
   const allRawData = [
     ...HUMANEVAL_RAW.map(d => ({ ...d, benchmark: "humaneval", source: "manual" })),
-    ...SWEBENCH_PRO_RAW.map(d => ({ ...d, benchmark: "swe-bench-pro", source: "manual" })),
   ];
   const rawRows = allRawData.map(d => ({
     benchmark: d.benchmark,
