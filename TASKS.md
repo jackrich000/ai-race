@@ -24,36 +24,27 @@ Waves 1-4 shipped. See git history for details.
 - [ ] **Share best insights from the site on LinkedIn / Reddit** — Identify the most compelling data stories and package them for social sharing.
 - [ ] **Rethink aggregate view on Lab Race tab** — Hard to get a sense of who is really ahead when data is spread across 6 benchmark tabs. Need a way to show the overall picture.
 - [ ] **Differentiated branding / visual identity** — Come up with branding that could extend across apps, blog, slides. Opportunity to define a reusable visual identity. Explore testing the [frontend-design skill](https://github.com/anthropics/skills/blob/main/skills/frontend-design/SKILL.md) for this.
-- [-] **Automated data pipeline** — Weekly automated refresh of all data sources + model card extraction from lab blogs. (2026-03-19)
+- [x] **Automated data pipeline** — Weekly automated refresh of all data sources + model card extraction from lab blogs. (2026-03-23)
   - [x] Phase 1: Test suite (Vitest + `lib/pipeline.js`, 77 tests) — PR #22, merged
   - [x] Phase 2: Data model + DB-driven model cards (migration, seed script, post-insert verification) — PR #23, merged
-  - [-] Phase 3: Model card extraction — PR #25. (2026-03-23)
-    - [x] Clean module architecture: `lib/extraction.js` (pure helpers), `lib/llm-extract.js` (LLM calls), `scripts/extract-model-cards.mjs` (orchestrator)
-    - [x] 122 unit tests passing (including ground truth normalization tests for all 5 labs)
-    - [x] Structured outputs (tool use) for guaranteed valid JSON
-    - [x] Blog scanning + article classification (Haiku) working for Anthropic, OpenAI, xAI, Google DeepMind, DeepSeek
-    - [x] Benchmark normalization (`normalizeBenchmarkName`) + triage (`triageScore`) with tests
-    - [x] All scores stored in `benchmark_raw` (tracked + untracked). Triage only affects curated pipeline.
-    - [x] Post-run GitHub Issue report (summary table, flagged scores, auto-ingested, untracked)
-    - [x] `swe-bench` key renamed to `swe-bench-verified` across all files
-    - [x] **Anthropic**: 16/16 ground truth scores, 100% accuracy
-    - [x] **OpenAI**: 16/16 ground truth scores, 100% accuracy (fixed: CSS selector, React hydration wait)
-    - [x] **xAI**: 5/5 ground truth scores, 100% accuracy (fixed: SVG chart container extraction)
-    - [x] **Google DeepMind**: 15/15 ground truth scores, 100% accuracy (blog.google, not deepmind.google)
-    - [x] **DeepSeek**: 14/14 ground truth scores, 100% accuracy (HuggingFace model cards)
-    - [x] Triage system: per-score rules (fuzzy match, >10pp jump), cross-score conflict detection, LLM variant review (resolves conflicts using page position + evaluation conditions, flags ambiguous cases for human review). Transparent reporting of LLM decisions.
-    - [x] Browserbase no longer needed — all 5 labs work with local headless Playwright (index pages + article pages)
-    - [x] DB migration 002: rename `swe-bench` → `swe-bench-verified` (applied 2026-03-23)
-    - [x] DB migrations 002-004 applied (swe-bench rename, triage columns, constraint drop)
-    - [x] Red team review: fixed triage_status data integrity, falsy score bug, rate limiting, dead code
-    - [x] Single article live run successful (Anthropic Sonnet 4.6: DB write + GitHub issue report working)
-    - [ ] Full pipeline test: run across all 5 labs, verify report covers both verified + unverified sources
-    - [ ] Report improvements: show which ingested scores are actually NEW to the site (not just confirming existing data)
-    - [ ] Test issue resolution workflow: review flagged scores from the GitHub issue, ingest or dismiss
+  - [x] Phase 3: Model card extraction — PR #25, merged
+  - [x] Phase 4: Pipeline orchestrator + GitHub Actions — PR #31, merged (2026-03-23)
+    - [x] Combined orchestrator (`scripts/run-pipeline.mjs`): extraction → ingestion → diff → combined GitHub issue report
+    - [x] GitHub Actions workflow: weekly Thursday 11 PM UTC cron + manual `workflow_dispatch` trigger
+    - [x] Combined report shows: flagged items (with rollover), auto-rejected, new scores on site (diff table)
+    - [x] Full pipeline test across all 5 labs: 32 articles processed, 16 review items resolved
+    - [x] Review workflow tested: Jack reviews GitHub issue, tells Claude Code what to ingest/reject/dismiss
+    - [x] AIME normalization fixed: only OTIS Mock variant matches, not generic AIME 2024/2025
+    - [x] Variant normalization: "no tools"/"without tools" treated as equivalent
+    - [x] Dynamic delete scope in ingestion: prevents duplicate key errors when new benchmarks enter via extraction
+    - [x] DB migration 005: `triage_reason` column (applied 2026-03-23)
+    - [x] 334 tests passing
+    - [x] CI verified: manual `workflow_dispatch` run succeeded, heartbeat report posted (issue #32)
   - [ ] Phase 3b: Expand extraction to Qwen + other Chinese labs — Qwen (`qwen.ai/research`), Kimi/Moonshot, MiniMax, Zhipu/GLM, ByteDance. **Qwen issue**: SPA with no `<a href>` links; article discovery requires click-based navigation (titles are `<div>` elements with JS routing, URLs use `qwen.ai/blog?id={slug}` pattern). Other Chinese labs need blog/model card URLs identified.
-  - [ ] Phase 4: GitHub Actions workflow (blocked on Phase 3 merge). Weekly Thursday night run. Must sync with verified data ingestion (`update-data.js`) so both sources are fresh before the site renders.
-    - [ ] Browser isolation per lab (single browser session currently shared — one blocked site hangs the whole pipeline)
+  - [ ] Future improvements:
+    - [ ] Browser isolation per lab (single browser session currently shared; one blocked site hangs the pipeline)
     - [ ] Monitor Google DeepMind URL pattern (`/gemini-models/`) — fragile if Google changes URL structure
+    - [ ] SWE-bench 80.2 variant extraction gap: LLM doesn't tag "with prompt modification" as model_variant, causing dedup loss
 - [ ] **Explore efficient manual benchmark entry** — MMMU/MMMU-Pro (multimodal) and OSWorld (computer use) would broaden capability coverage but lack automated data sources. Investigate lightweight manual entry workflows.
 - [ ] **Zoom to fit** — Chart automatically zooms to the time period where the selected benchmark is active, so you're not looking at empty space before/after it existed.
 - [ ] **Non-percentage benchmark visualizations** — Design a way to display benchmarks with non-% scoring (Elo, minutes, percentile). Candidates: METR Time Horizons, GDPval, Codeforces / LiveCodeBench Pro. Requires a different chart type or normalization approach.
