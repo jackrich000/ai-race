@@ -15,7 +15,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const require = createRequire(import.meta.url);
-const { BENCHMARK_META, LABS } = require("../lib/config.js");
+const { BENCHMARK_META, LABS, LAB_KEYS } = require("../lib/config.js");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,6 +43,12 @@ const SKIP_EXTRACT = process.argv.includes("--skip-extract");
 
 // Automated benchmarks (must match update-data.js)
 const AUTOMATED_BENCHMARKS = ["swe-bench-verified", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime", "frontiermath", "math-l5"];
+
+// Labs that have automated extraction (subset of LAB_KEYS — excludes "chinese" composite)
+const EXTRACTED_LABS = ["openai", "anthropic", "google", "xai", "chinese"];
+
+// Staleness threshold: warn if a lab hasn't had new extraction data in this many weeks
+const STALENESS_WEEKS = 6;
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -193,6 +199,37 @@ async function queryRejectedItems(supabase, runStartTime) {
 }
 
 /**
+ * Query last extraction date per lab from benchmark_raw.
+ * Returns array of { lab, lastExtraction, stale } objects.
+ */
+async function queryLabFreshness(supabase) {
+  const results = [];
+  const staleThreshold = new Date();
+  staleThreshold.setDate(staleThreshold.getDate() - STALENESS_WEEKS * 7);
+
+  for (const lab of EXTRACTED_LABS) {
+    const { data, error } = await supabase
+      .from("benchmark_raw")
+      .select("extracted_at")
+      .eq("lab", lab)
+      .eq("source", "model_card_auto")
+      .order("extracted_at", { ascending: false })
+      .limit(1);
+
+    if (error) {
+      results.push({ lab, lastExtraction: null, stale: true });
+      continue;
+    }
+
+    const lastDate = data?.[0]?.extracted_at || null;
+    const stale = !lastDate || new Date(lastDate) < staleThreshold;
+    results.push({ lab, lastExtraction: lastDate, stale });
+  }
+
+  return results;
+}
+
+/**
  * Post-ingestion health check: verify benchmark_scores has data for each automated benchmark.
  */
 async function healthCheck(supabase) {
@@ -231,7 +268,7 @@ function labName(key) {
 /**
  * Build the combined GitHub issue report.
  */
-function buildReport({ changes, flagged, rejected, extractResult, ingestResult, runDate }) {
+function buildReport({ changes, flagged, rejected, extractResult, ingestResult, labFreshness, runDate }) {
   const parts = [];
 
   // ─── Header ─────────────────────────────────────────────
@@ -311,6 +348,20 @@ function buildReport({ changes, flagged, rejected, extractResult, ingestResult, 
     parts.push("_No changes this run._");
   }
 
+  // ─── Lab Freshness ──────────────────────────────────────
+  const staleLabs = labFreshness.filter(l => l.stale);
+
+  parts.push("");
+  parts.push("## Lab Freshness");
+  parts.push("");
+  parts.push("| Lab | Last Extraction | Status |");
+  parts.push("|-----|----------------|--------|");
+  for (const l of labFreshness) {
+    const date = l.lastExtraction ? l.lastExtraction.split("T")[0] : "Never";
+    const status = l.stale ? `Stale (>${STALENESS_WEEKS} weeks)` : "OK";
+    parts.push(`| ${labName(l.lab)} | ${date} | ${status} |`);
+  }
+
   parts.push("");
   parts.push("---");
   parts.push("_Generated automatically by the pipeline orchestrator._");
@@ -330,7 +381,8 @@ function buildReport({ changes, flagged, rejected, extractResult, ingestResult, 
     title = `[Pipeline] ${runDate}: No changes`;
   }
 
-  const labels = totalFlagged > 0 ? "pipeline-report,needs-review" : "pipeline-report";
+  const needsReview = totalFlagged > 0 || staleLabs.length > 0;
+  const labels = needsReview ? "pipeline-report,needs-review" : "pipeline-report";
 
   return { title, body: parts.join("\n"), labels };
 }
@@ -439,12 +491,19 @@ async function main() {
     }
   }
 
-  // ─── Step 6: Query flagged & rejected items ─────────────
-  console.log("\nStep 6: Querying flagged and rejected items...");
+  // ─── Step 6: Query flagged, rejected, and freshness ─────
+  console.log("\nStep 6: Querying flagged, rejected, and lab freshness...");
   const flagged = await queryFlaggedItems(supabase, runStartTime);
   const rejected = await queryRejectedItems(supabase, runStartTime);
+  const labFreshness = await queryLabFreshness(supabase);
   console.log(`  Flagged: ${flagged.newItems.length} new, ${flagged.carriedOver.length} carried over`);
   console.log(`  Rejected: ${rejected.length} this run`);
+  const staleLabs = labFreshness.filter(l => l.stale);
+  if (staleLabs.length > 0) {
+    console.warn(`  Stale labs: ${staleLabs.map(l => labName(l.lab)).join(", ")}`);
+  } else {
+    console.log(`  All ${labFreshness.length} labs have fresh data`);
+  }
 
   // ─── Step 7: Build and post report ──────────────────────
   console.log("\nStep 7: Building report...");
@@ -454,6 +513,7 @@ async function main() {
     rejected,
     extractResult,
     ingestResult,
+    labFreshness,
     runDate,
   });
 
