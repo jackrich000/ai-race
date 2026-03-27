@@ -27,6 +27,7 @@ Waves 1-4 shipped. See git history for details.
 - [ ] **Fix SWE-bench variant extraction gap** — LLM doesn't tag "with prompt modification" as `model_variant` for the 80.2 SWE-bench score, causing dedup loss.
 - [ ] **Explore efficient manual benchmark entry** — MMMU/MMMU-Pro (multimodal) and OSWorld (computer use) would broaden capability coverage but lack automated data sources. Investigate lightweight manual entry workflows.
 - [ ] **Zoom to fit** — Chart automatically zooms to the time period where the selected benchmark is active, so you're not looking at empty space before/after it existed.
+- [ ] **Add "last updated" date to chart** — Show when the data was last refreshed so visitors know how current it is.
 - [ ] **Non-percentage benchmark visualizations** — Design a way to display benchmarks with non-% scoring (Elo, minutes, percentile). Candidates: METR Time Horizons, GDPval, Codeforces / LiveCodeBench Pro. Requires a different chart type or normalization approach.
 - [ ] **Modernise frontend stack** — Migrate to TypeScript + build step (Vite), then adopt a component framework (Vue or Svelte). Addresses known architectural debt: monolithic app.js, manual DOM manipulation, no type safety. Do in two phases: (1) TypeScript + Vite, (2) framework. Requires external research + subagent red team per new process.
 
