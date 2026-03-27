@@ -150,8 +150,9 @@ async function launchBrowser() {
  */
 async function scanBlogIndex(page, source) {
   console.log(`   Scanning ${source.name} (${source.indexUrl})...`);
-  await page.goto(source.indexUrl, { waitUntil: "load", timeout: 45000 });
-  await page.waitForTimeout(3000);
+  await page.goto(source.indexUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+  // Wait for JS frameworks (React, Next.js) to hydrate — matches extractPageContent() timing
+  await page.waitForTimeout(6000);
 
   let articles = await page.evaluate(() => {
     const links = Array.from(document.querySelectorAll("a[href]"));
@@ -408,12 +409,24 @@ async function downloadImage(url) {
  * Extract all benchmark scores from a single article.
  * Downloads images in parallel, runs vision + text extraction concurrently.
  */
-async function extractFromArticle(page, anthropic, url, modelName) {
+async function extractFromArticle(page, anthropic, url, modelName, cutoffDate = null) {
   console.log(`\n   Extracting: "${modelName}" from ${url}`);
 
   // Step 1: Extract page content
   const { publishDate, images, sections, dateString } = await extractPageContent(page, url);
   console.log(`     Publish date: ${publishDate ? publishDate.toISOString().split("T")[0] : `not found (raw: ${dateString})`}`);
+
+  // Date filtering: skip LLM extraction for articles older than cutoff
+  if (cutoffDate && publishDate && publishDate < cutoffDate) {
+    const pubStr = publishDate.toISOString().split("T")[0];
+    const cutStr = cutoffDate.toISOString().split("T")[0];
+    console.log(`     Skipping (published ${pubStr}, before cutoff ${cutStr})`);
+    return { scores: [], publishDate, skippedOld: true };
+  }
+  if (cutoffDate && !publishDate) {
+    console.log(`     Date not parseable, processing anyway (fail open)`);
+  }
+
   console.log(`     Found ${images.length} images, ${sections.length} text sections`);
 
   // Step 2: Filter and download content images
@@ -634,10 +647,11 @@ async function main() {
       const articlePage = await ctx.newPage();
 
       try {
-        const { scores, publishDate } = await extractFromArticle(
-          articlePage, anthropic, article.url, article.modelName
+        const cutoff = FORCE ? null : lastExtractionDate;
+        const { scores, publishDate, skippedOld } = await extractFromArticle(
+          articlePage, anthropic, article.url, article.modelName, cutoff
         );
-        allExtracted.push({ article, scores, publishDate });
+        allExtracted.push({ article, scores, publishDate, skippedOld });
       } catch (err) {
         console.error(`   FAILED: ${article.title}: ${err.message.substring(0, 200)}`);
         allExtracted.push({ article, scores: [], publishDate: null });
@@ -648,6 +662,18 @@ async function main() {
   } finally {
     await browser.close();
     console.log("\nBrowser closed.\n");
+  }
+
+  // Log date filtering summary
+  const skippedOldCount = allExtracted.filter(e => e.skippedOld).length;
+  const processedCount = allExtracted.filter(e => !e.skippedOld).length;
+  const noParseDateCount = allExtracted.filter(e => !e.skippedOld && !e.publishDate).length;
+  if (skippedOldCount > 0) {
+    console.log(`   ${skippedOldCount} article(s) skipped (before cutoff), ${processedCount} processed`);
+    if (noParseDateCount > 0) {
+      console.log(`   ${noParseDateCount} article(s) with unparseable dates (processed anyway)`);
+    }
+    console.log("");
   }
 
   // ─── Step 3: Normalize, triage, and store ────────────────────
