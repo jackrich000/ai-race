@@ -739,30 +739,50 @@ async function main() {
   }
 
   // Write raw observations to benchmark_raw (audit trail — includes all points, even filtered ones)
+  // Hardcoded list: sources owned by this ingestion script. model_card_auto is excluded
+  // because those rows are owned by the extraction pipeline (extract-model-cards.mjs).
+  const INGESTION_SOURCES = ["artificialanalysis", "swebench", "arcprize", "epoch", "model_card", "manual"];
   const allRawPoints = allMerged;
   if (allRawPoints.length > 0) {
-    console.log(`   Writing ${allRawPoints.length} raw observations to benchmark_raw...`);
-    const rawRows = allRawPoints.map(p => ({
-      benchmark: p.benchmark,
-      lab: p.lab,
-      model: p.model,
-      score: Math.round(p.score * 10) / 10,
-      date: p.date.toISOString().split("T")[0],
-      source: p.source,
-      verified: p.verified !== false,
-    }));
+    // Filter out model_card_auto rows (already in DB, managed by extraction pipeline)
+    const rawRows = allRawPoints
+      .filter(p => p.source !== "model_card_auto")
+      .map(p => ({
+        benchmark: p.benchmark,
+        lab: p.lab,
+        model: p.model,
+        score: Math.round(p.score * 10) / 10,
+        date: p.date.toISOString().split("T")[0],
+        source: p.source,
+        verified: p.verified !== false,
+      }));
+
+    console.log(`   Writing ${rawRows.length} raw observations to benchmark_raw...`);
+
+    // Delete existing rows for ingestion-owned sources (scoped delete + insert)
+    const { error: rawDelError } = await supabase
+      .from("benchmark_raw")
+      .delete()
+      .in("source", INGESTION_SOURCES);
+
+    if (rawDelError) {
+      console.error(`   benchmark_raw delete FAILED: ${rawDelError.message}`);
+      process.exit(1);
+    }
+    console.log(`   Deleted existing rows for ingestion sources: ${INGESTION_SOURCES.join(", ")}`);
 
     for (let i = 0; i < rawRows.length; i += BATCH_SIZE) {
       const batch = rawRows.slice(i, i + BATCH_SIZE);
       const { error } = await supabase
         .from("benchmark_raw")
-        .upsert(batch, { onConflict: "benchmark,lab,model,source" });
+        .insert(batch);
 
       if (error) {
-        console.warn(`   benchmark_raw upsert WARN (batch ${Math.floor(i / BATCH_SIZE) + 1}):`, error.message);
+        console.error(`   benchmark_raw insert FAILED (batch ${Math.floor(i / BATCH_SIZE) + 1}): ${error.message}`);
+        process.exit(1);
       }
     }
-    console.log(`   benchmark_raw: upserted ${rawRows.length} rows.`);
+    console.log(`   benchmark_raw: inserted ${rawRows.length} rows.`);
   }
 
   // Automated benchmarks managed by this script. Manual seeds (humaneval) are excluded.

@@ -34,6 +34,7 @@ jobs:
         run: node scripts/validate-extraction.mjs
 
       - name: Run pipeline
+        id: pipeline
         env:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           AA_API_KEY: ${{ secrets.AA_API_KEY }}
@@ -42,14 +43,25 @@ jobs:
         run: node scripts/run-pipeline.mjs
 
       - name: Regenerate analyses
+        id: analyses
         if: success()
         env:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: node scripts/generate-analyses.js
 
-      - name: Notify on failure
-        if: failure()
+      - name: Report analysis failures
+        if: always() && steps.analyses.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUM=$(gh issue list --label pipeline-report --limit 1 --json number --jq '.[0].number')
+          if [ -n "$ISSUE_NUM" ]; then
+            gh issue comment "$ISSUE_NUM" --body "**Analysis regeneration failed.** Some presets may be serving stale data. Check the [Actions log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})."
+          fi
+
+      - name: Notify on pipeline failure
+        if: failure() && steps.pipeline.outcome == 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

@@ -144,6 +144,7 @@ async function diffScores(supabase, beforeSnapshot) {
         previous: prevScore,
         model: after.model,
         verified: after.verified,
+        source: after.source,
       });
     }
   }
@@ -266,6 +267,22 @@ function labName(key) {
 }
 
 /**
+ * Get human-readable source name, fallback to key.
+ */
+function sourceName(key) {
+  const names = {
+    artificialanalysis: "Artificial Analysis",
+    swebench: "SWE-bench",
+    arcprize: "ARC Prize",
+    epoch: "Epoch AI",
+    model_card: "Model Card",
+    model_card_auto: "Model Card (auto)",
+    manual: "Manual",
+  };
+  return names[key] || key || "Unknown";
+}
+
+/**
  * Build the combined GitHub issue report.
  */
 function buildReport({ changes, flagged, rejected, extractResult, ingestResult, labFreshness, runDate }) {
@@ -337,12 +354,12 @@ function buildReport({ changes, flagged, rejected, extractResult, ingestResult, 
   if (changes.length > 0) {
     parts.push("Changes to best scores on the live site this run.");
     parts.push("");
-    parts.push("| Benchmark | Lab | Score | Previous | Model | Status |");
-    parts.push("|-----------|-----|-------|----------|-------|--------|");
+    parts.push("| Benchmark | Lab | Score | Previous | Model | Source | Status |");
+    parts.push("|-----------|-----|-------|----------|-------|--------|--------|");
     for (const c of changes) {
       const prev = c.previous !== null ? c.previous : "—";
       const status = c.verified ? "Verified" : "Unverified";
-      parts.push(`| ${benchmarkName(c.benchmark)} | ${labName(c.lab)} | ${c.score} | ${prev} | ${c.model} | ${status} |`);
+      parts.push(`| ${benchmarkName(c.benchmark)} | ${labName(c.lab)} | ${c.score} | ${prev} | ${c.model} | ${sourceName(c.source)} | ${status} |`);
     }
   } else {
     parts.push("_No changes this run._");

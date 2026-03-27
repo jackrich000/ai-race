@@ -660,31 +660,59 @@ async function main() {
   const presets = cliPreset ? [cliPreset] : getPresets();
   console.log(`2. Generating analyses for ${presets.length} presets: ${presets.join(", ")}\n`);
 
+  const failedPresets = [];
+
   for (const preset of presets) {
     const { startIdx, endIdx } = computeQuarterRange(preset);
     console.log(`   [${preset}] ${TIME_LABELS[startIdx]} to ${TIME_LABELS[endIdx]}...`);
 
-    try {
-      const { analysis, startQuarter, endQuarter } = await generateAnalysis(preset);
+    let lastError = null;
+    const MAX_ATTEMPTS = 2;
 
-      const { error } = await supabase
-        .from("cached_analyses")
-        .upsert({
-          date_range: preset,
-          analysis,
-          start_quarter: startQuarter,
-          end_quarter: endQuarter,
-          generated_at: new Date().toISOString(),
-        }, { onConflict: "date_range" });
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const { analysis, startQuarter, endQuarter } = await generateAnalysis(preset);
 
-      if (error) {
-        console.error(`   [${preset}] UPSERT FAILED: ${error.message}`);
-      } else {
-        console.log(`   [${preset}] Done (${analysis.length} chars)`);
+        const { error } = await supabase
+          .from("cached_analyses")
+          .upsert({
+            date_range: preset,
+            analysis,
+            start_quarter: startQuarter,
+            end_quarter: endQuarter,
+            generated_at: new Date().toISOString(),
+          }, { onConflict: "date_range" });
+
+        if (error) {
+          console.error(`   [${preset}] UPSERT FAILED: ${error.message}`);
+          lastError = new Error(error.message);
+        } else {
+          console.log(`   [${preset}] Done (${analysis.length} chars)`);
+          lastError = null;
+        }
+        break; // success or DB error (no retry for DB issues)
+      } catch (err) {
+        lastError = err;
+        // Only retry on HTTP/network errors (status 500, 429, etc.), not JSON parse failures
+        const isRetryable = err.status >= 500 || err.status === 429 || err.code === "ECONNRESET" || err.code === "ETIMEDOUT";
+        if (isRetryable && attempt < MAX_ATTEMPTS) {
+          console.warn(`   [${preset}] Attempt ${attempt} failed (${err.status || err.code}). Retrying in 10s...`);
+          await new Promise(r => setTimeout(r, 10000));
+        } else {
+          console.error(`   [${preset}] FAILED: ${err.message}`);
+          break;
+        }
       }
-    } catch (err) {
-      console.error(`   [${preset}] FAILED: ${err.message}`);
     }
+
+    if (lastError) {
+      failedPresets.push(preset);
+    }
+  }
+
+  if (failedPresets.length > 0) {
+    console.error(`\nFailed presets: ${failedPresets.join(", ")}`);
+    process.exit(1);
   }
 
   console.log("\nDone!");
