@@ -171,7 +171,9 @@ async function discoverViaFeed(source) {
     const title = itemXml.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)?.[1]
       || itemXml.match(/<title>(.*?)<\/title>/)?.[1]
       || "";
-    const link = itemXml.match(/<link>(.*?)<\/link>/)?.[1] || "";
+    const link = itemXml.match(/<link><!\[CDATA\[(.*?)\]\]><\/link>/)?.[1]
+      || itemXml.match(/<link>(.*?)<\/link>/)?.[1]
+      || "";
     if (title && link) {
       articles.push({ title: title.trim(), url: link.trim() });
     }
@@ -263,8 +265,9 @@ async function scanBlogIndex(page, source) {
 async function scanQwenCards(page, source) {
   console.log(`   Scanning ${source.name} (${source.indexUrl})...`);
   await page.goto(source.indexUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
-  // Qwen uses heavy CSR (ICE framework) — needs extra hydration time
-  await page.waitForTimeout(10000);
+  // Qwen uses heavy CSR (ICE framework) — wait for cards to render
+  await page.waitForSelector('[id^="latestAdvancement_blog_id_"]', { timeout: 15000 })
+    .catch(() => console.warn(`   Qwen cards did not appear within 15s, proceeding anyway`));
 
   const articles = await page.evaluate(() => {
     const results = [];
