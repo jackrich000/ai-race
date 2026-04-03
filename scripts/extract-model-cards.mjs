@@ -143,6 +143,59 @@ async function launchBrowser() {
   return { browser, context, page };
 }
 
+// ─── RSS/Feed-based discovery ────────────────────────────────
+
+/**
+ * Discover articles from an RSS/Atom feed via server-side HTTP (no browser).
+ * Avoids triggering anti-bot protections that fire on browser-based blog index visits.
+ * Returns same { title, url } shape as scanBlogIndex().
+ */
+async function discoverViaFeed(source) {
+  console.log(`   Fetching feed ${source.name} (${source.feedUrl})...`);
+  const resp = await fetch(source.feedUrl, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; ai-race-pipeline/1.0)" },
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!resp.ok) {
+    console.warn(`   Feed fetch failed: ${resp.status}`);
+    return [];
+  }
+  const xml = await resp.text();
+
+  // Parse RSS <item> entries — extract <title> and <link>
+  const articles = [];
+  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+  let match;
+  while ((match = itemRegex.exec(xml)) !== null) {
+    const itemXml = match[1];
+    const title = itemXml.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)?.[1]
+      || itemXml.match(/<title>(.*?)<\/title>/)?.[1]
+      || "";
+    const link = itemXml.match(/<link>(.*?)<\/link>/)?.[1] || "";
+    if (title && link) {
+      articles.push({ title: title.trim(), url: link.trim() });
+    }
+  }
+
+  // Filter by articlePathPattern if set
+  const filtered = source.articlePathPattern
+    ? articles.filter(a => {
+        try { return source.articlePathPattern.test(new URL(a.url).pathname); }
+        catch { return false; }
+      })
+    : articles;
+
+  // RSS feeds are newest-first; cap to a reasonable batch for LLM classification
+  const MAX_FEED_ARTICLES = 20;
+  const capped = filtered.slice(0, MAX_FEED_ARTICLES);
+
+  console.log(`   Found ${filtered.length} articles via feed (showing newest ${capped.length})`);
+  if (source.minExpectedArticles && filtered.length < source.minExpectedArticles) {
+    console.warn(`   WARNING: Found ${filtered.length} articles, expected at least ${source.minExpectedArticles}.`);
+  }
+  return capped;
+}
+
 // ─── Blog index scanning ─────────────────────────────────────
 
 /**
@@ -195,6 +248,45 @@ async function scanBlogIndex(page, source) {
   });
 
   console.log(`   Found ${articles.length} article links via DOM`);
+  if (source.minExpectedArticles && articles.length < source.minExpectedArticles) {
+    console.warn(`   WARNING: Found ${articles.length} articles, expected at least ${source.minExpectedArticles}. Site structure may have changed.`);
+  }
+  return articles;
+}
+
+// ─── Qwen card-based scanning ────────────────────────────────
+
+/**
+ * Scan qwen.ai/research for article cards (CSR SPA with div-based navigation).
+ * Cards have id="latestAdvancement_blog_id_<slug>" which maps to /blog?id=<slug>.
+ */
+async function scanQwenCards(page, source) {
+  console.log(`   Scanning ${source.name} (${source.indexUrl})...`);
+  await page.goto(source.indexUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+  // Qwen uses heavy CSR (ICE framework) — needs extra hydration time
+  await page.waitForTimeout(10000);
+
+  const articles = await page.evaluate(() => {
+    const results = [];
+    // Cards have stable id format: latestAdvancement_blog_id_<slug>
+    const cards = document.querySelectorAll('[id^="latestAdvancement_blog_id_"]');
+    for (const card of cards) {
+      const slug = card.id.replace("latestAdvancement_blog_id_", "");
+      if (!slug) continue;
+
+      const titleEl = card.querySelector('[class*="Title"]');
+      const title = titleEl ? titleEl.textContent.trim() : "";
+      if (!title || title.length < 5) continue;
+
+      results.push({
+        title,
+        url: `https://qwen.ai/blog?id=${slug}`,
+      });
+    }
+    return results;
+  });
+
+  console.log(`   Found ${articles.length} article cards via DOM`);
   if (source.minExpectedArticles && articles.length < source.minExpectedArticles) {
     console.warn(`   WARNING: Found ${articles.length} articles, expected at least ${source.minExpectedArticles}. Site structure may have changed.`);
   }
@@ -564,83 +656,130 @@ async function main() {
     }
   }
 
-  // Launch browser
-  console.log("Launching browser...");
-  const { browser, page } = await launchBrowser();
-
   const newArticles = [];
   const allExtracted = [];
 
-  try {
-    // ─── Step 1: Discover articles ─────────────────────────────
+  // ─── Step 1: Discover articles ─────────────────────────────
 
-    if (SINGLE_URL) {
-      // Single URL mode: skip discovery
-      if (!SINGLE_MODEL || !LAB_FILTER) {
-        console.error("Error: --url requires --model and --lab.");
-        process.exit(1);
-      }
-      newArticles.push({
-        source: LAB_SOURCES.find(s => s.lab === LAB_FILTER) || { lab: LAB_FILTER, name: LAB_FILTER },
-        title: SINGLE_MODEL,
-        url: SINGLE_URL,
-        modelName: SINGLE_MODEL,
-      });
-    } else {
-      console.log("Step 1: Scanning blog indexes...\n");
+  if (SINGLE_URL) {
+    // Single URL mode: skip discovery
+    if (!SINGLE_MODEL || !LAB_FILTER) {
+      console.error("Error: --url requires --model and --lab.");
+      process.exit(1);
+    }
+    newArticles.push({
+      source: LAB_SOURCES.find(s => s.lab === LAB_FILTER) || { lab: LAB_FILTER, name: LAB_FILTER },
+      title: SINGLE_MODEL,
+      url: SINGLE_URL,
+      modelName: SINGLE_MODEL,
+    });
+  } else {
+    console.log("Step 1: Scanning blog indexes...\n");
 
-      const sources = LAB_FILTER
-        ? LAB_SOURCES.filter(s => s.lab === LAB_FILTER || s.name.toLowerCase() === LAB_FILTER)
-        : LAB_SOURCES;
+    const sources = LAB_FILTER
+      ? LAB_SOURCES.filter(s => s.lab === LAB_FILTER || s.name.toLowerCase() === LAB_FILTER)
+      : LAB_SOURCES;
 
-      for (const source of sources) {
-        try {
-          const articles = await scanBlogIndex(page, source);
-          if (articles.length === 0) continue;
+    // Split sources into feed-based (no browser needed) and browser-based
+    const feedSources = sources.filter(s => s.feedUrl);
+    const browserSources = sources.filter(s => !s.feedUrl);
 
-          // Classify which are model releases (biased toward over-classification)
-          const classifications = await classifyArticles(anthropic, articles);
+    // Discover from feeds first (no browser, avoids triggering anti-bot)
+    for (const source of feedSources) {
+      try {
+        const articles = await discoverViaFeed(source);
+        if (articles.length === 0) continue;
 
-          for (const cls of classifications) {
-            if (!cls.is_model_release) continue;
-            const article = articles[cls.index];
-            if (!article) continue;
+        const classifications = await classifyArticles(anthropic, articles);
 
-            // Skip already-processed URLs (unless --force)
-            if (processedUrls.has(article.url)) {
-              console.log(`   Skipping (already processed): ${article.title}`);
-              continue;
-            }
+        for (const cls of classifications) {
+          if (!cls.is_model_release) continue;
+          const article = articles[cls.index];
+          if (!article) continue;
 
-            newArticles.push({
-              source,
-              title: article.title,
-              url: article.url,
-              modelName: cls.model_name || article.title,
-            });
-            console.log(`   NEW: "${article.title}" -> ${cls.model_name || "unknown model"}`);
+          if (processedUrls.has(article.url)) {
+            console.log(`   Skipping (already processed): ${article.title}`);
+            continue;
           }
-        } catch (err) {
-          console.warn(`   Error scanning ${source.name}: ${err.message.substring(0, 150)}`);
+
+          newArticles.push({
+            source,
+            title: article.title,
+            url: article.url,
+            modelName: cls.model_name || article.title,
+          });
+          console.log(`   NEW: "${article.title}" -> ${cls.model_name || "unknown model"}`);
         }
+      } catch (err) {
+        console.warn(`   Error fetching feed for ${source.name}: ${err.message.substring(0, 150)}`);
       }
     }
 
-    console.log(`\nFound ${newArticles.length} articles to process.\n`);
+    // Discover from browser-based sources
+    if (browserSources.length > 0) {
+      console.log("\nLaunching scanning browser...");
+      const { browser: scanBrowser, page: scanPage } = await launchBrowser();
 
-    if (newArticles.length === 0) {
-      console.log("No new articles to process. Done.");
-      return;
+      try {
+        for (const source of browserSources) {
+          try {
+            const articles = source.scanMethod === "qwenCards"
+              ? await scanQwenCards(scanPage, source)
+              : await scanBlogIndex(scanPage, source);
+            if (articles.length === 0) continue;
+
+            const classifications = await classifyArticles(anthropic, articles);
+
+            for (const cls of classifications) {
+              if (!cls.is_model_release) continue;
+              const article = articles[cls.index];
+              if (!article) continue;
+
+              if (processedUrls.has(article.url)) {
+                console.log(`   Skipping (already processed): ${article.title}`);
+                continue;
+              }
+
+              newArticles.push({
+                source,
+                title: article.title,
+                url: article.url,
+                modelName: cls.model_name || article.title,
+              });
+              console.log(`   NEW: "${article.title}" -> ${cls.model_name || "unknown model"}`);
+            }
+          } catch (err) {
+            console.warn(`   Error scanning ${source.name}: ${err.message.substring(0, 150)}`);
+          }
+        }
+      } finally {
+        await scanBrowser.close();
+        console.log("Scanning browser closed.\n");
+      }
     }
+  }
 
-    // ─── Step 2: Extract scores from articles ──────────────────
+  console.log(`Found ${newArticles.length} articles to process.\n`);
 
+  if (newArticles.length === 0) {
+    console.log("No new articles to process. Done.");
+    return;
+  }
+
+  // ─── Step 2: Extract scores from articles ──────────────────
+  // Use a fresh browser for extraction — separate from the scanning browser.
+  // This ensures no anti-bot state from blog index scanning carries over.
+
+  console.log("Launching extraction browser...");
+  const { browser: extractBrowser } = await launchBrowser();
+
+  try {
     console.log("Step 2: Extracting scores from articles...\n");
 
     for (const article of newArticles) {
       // Fresh browser context per article: prevents cookie/session state from
       // triggering anti-bot protection on subsequent page loads (OpenAI, xAI).
-      const ctx = await browser.newContext({
+      const ctx = await extractBrowser.newContext({
         userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         viewport: { width: 1280, height: 720 },
       });
@@ -660,8 +799,8 @@ async function main() {
       }
     }
   } finally {
-    await browser.close();
-    console.log("\nBrowser closed.\n");
+    await extractBrowser.close();
+    console.log("\nExtraction browser closed.\n");
   }
 
   // Log date filtering summary
