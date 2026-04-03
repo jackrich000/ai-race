@@ -21,7 +21,7 @@ Waves 1-4 shipped. See git history for details.
 - [ ] **Share best insights from the site on LinkedIn / Reddit** — Identify the most compelling data stories and package them for social sharing.
 - [ ] **Rethink aggregate view on Lab Race tab** — Hard to get a sense of who is really ahead when data is spread across 6 benchmark tabs. Need a way to show the overall picture.
 - [ ] **Differentiated branding / visual identity** — Come up with branding that could extend across apps, blog, slides. Opportunity to define a reusable visual identity. Explore testing the [frontend-design skill](https://github.com/anthropics/skills/blob/main/skills/frontend-design/SKILL.md) for this.
-- [ ] **Expand extraction to Chinese labs** — Add Qwen (`qwen.ai/research`), Kimi/Moonshot, MiniMax, Zhipu/GLM, ByteDance to the model card extraction pipeline. **Qwen issue**: SPA with no `<a href>` links; article discovery requires click-based navigation (titles are `<div>` elements with JS routing, URLs use `qwen.ai/blog?id={slug}` pattern). Other Chinese labs need blog/model card URLs identified.
+- [ ] **Expand extraction to more Chinese labs** — Add Kimi/Moonshot, MiniMax, Zhipu/GLM, ByteDance to the model card extraction pipeline. Need blog/model card URLs identified. (Qwen and DeepSeek already covered.)
 - [ ] **Skip analysis regeneration when no scores changed** — Gate `generate-analyses.js` on whether the ingestion diff is non-empty. Saves ~$5-15/week in API credits.
 - [ ] **Monitor Google DeepMind URL pattern** — Extraction relies on `/gemini-models/` URL pattern, which is fragile if Google changes their blog structure.
 - [ ] **Fix SWE-bench variant extraction gap** — LLM doesn't tag "with prompt modification" as `model_variant` for the 80.2 SWE-bench score, causing dedup loss.
@@ -63,6 +63,7 @@ Waves 1-4 shipped. See git history for details.
 - [x] **Codebase walkthrough** — Guided tour so Jack understands file/module responsibilities and data flow. (2026-03-18)
 - [x] **Automated data pipeline** — Weekly automated refresh of all data sources + model card extraction from lab blogs. 4 phases: test suite (PR #22), data model (PR #23), extraction (PR #25), orchestrator + GitHub Actions (PR #31). 334 tests. (2026-03-23)
 - [x] **Fix SWE-bench Pro data wipe** — Pipeline's dynamic DELETE scope accidentally wiped manually-seeded data. Promoted swe-bench-pro to automated pipeline, restricted DELETE to static benchmark list. (2026-03-23)
+- [x] **Fix OpenAI extraction + Qwen scanner** — OpenAI never worked due to IP-level rate limiting from blog index scanning; replaced with RSS feed discovery. Qwen scanner found 0 articles due to SPA div-based navigation; added card-based scanner. Also separated scanning/extraction into separate browser instances. GPT-5.4 mini/nano manually re-extracted and split into separate models. PR #36. (2026-04-03)
 
 ### Other
 
