@@ -388,7 +388,7 @@ async function fetchSWEBench() {
 async function fetchARCPrize() {
   console.log("   [ARC] Fetching ARC Prize evaluations...");
   const data = await fetchJSON(
-    "https://arcprize.org/media/data/leaderboard/evaluations.json"
+    "https://arcprize.org/media/data/evaluations.json"
   );
 
   const evaluations = Array.isArray(data) ? data : [];
