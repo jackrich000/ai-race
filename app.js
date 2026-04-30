@@ -388,6 +388,7 @@ function buildRaceDatasets() {
       label: lab.name,
       data: bench.scores[labKey].map(d => d ? d.score : null),
       _models: bench.scores[labKey].map(d => d ? d.model : null),
+      _variants: bench.scores[labKey].map(d => d ? d.variant : null),
       _source: bench.scores[labKey].map(d => d ? d.source : null),
       _verified: verifiedArr,
       borderColor: lab.color,
@@ -412,6 +413,7 @@ function buildFrontierDatasets() {
 
     const frontierData = [];
     const frontierModels = [];
+    const frontierVariants = [];
     const frontierLabs = [];
     const frontierVerified = [];
     const frontierSources = [];
@@ -429,6 +431,7 @@ function buildFrontierDatasets() {
     for (let i = 0; i < TIME_LABELS.length; i++) {
       let bestScore = null;
       let bestModel = null;
+      let bestVariant = null;
       let bestLab = null;
       let bestVerified = true;
       let bestSource = null;
@@ -438,6 +441,7 @@ function buildFrontierDatasets() {
         if (entry !== null && (bestScore === null || entry.score > bestScore)) {
           bestScore = entry.score;
           bestModel = entry.model;
+          bestVariant = entry.variant ?? null;
           bestLab = labKey;
           bestVerified = entry.verified !== false;
           bestSource = entry.source || null;
@@ -456,6 +460,7 @@ function buildFrontierDatasets() {
         } else {
           bestScore = null;
           bestModel = null;
+          bestVariant = null;
           bestLab = null;
           bestVerified = true;
           bestSource = null;
@@ -464,6 +469,7 @@ function buildFrontierDatasets() {
 
       frontierData.push(bestScore);
       frontierModels.push(bestModel);
+      frontierVariants.push(bestVariant);
       frontierLabs.push(bestLab);
       frontierVerified.push(bestVerified);
       frontierSources.push(bestSource);
@@ -476,6 +482,7 @@ function buildFrontierDatasets() {
       label: benchData.name,
       data: frontierData,
       _models: frontierModels,
+      _variants: frontierVariants,
       _labs: frontierLabs,
       _source: frontierSources,
       _verified: frontierVerified,
@@ -669,11 +676,16 @@ function renderChart() {
         const model = context.dataset._models?.[context.dataIndex];
         const labKey = context.dataset._labs?.[context.dataIndex];
         const labName = labKey ? (LABS[labKey]?.name || labKey) : null;
+        // Defensive trim: pre-normalized writes should yield clean strings, but
+        // tolerate stale rows with whitespace by ignoring effectively-empty values.
+        const rawVariant = context.dataset._variants?.[context.dataIndex];
+        const variant = (typeof rawVariant === "string" && rawVariant.trim() !== "") ? rawVariant.trim() : null;
+        const modelLabel = model && variant ? `${model} [${variant}]` : model;
         let line = `${context.dataset.label}: ${val.toFixed(1)}%`;
-        if (model && labName) {
-          line += ` (${model}, ${labName})`;
-        } else if (model) {
-          line += ` (${model})`;
+        if (modelLabel && labName) {
+          line += ` (${modelLabel}, ${labName})`;
+        } else if (modelLabel) {
+          line += ` (${modelLabel})`;
         }
         const isVerified = context.dataset._verified?.[context.dataIndex] !== false;
         const rawSource = context.dataset._source?.[context.dataIndex];

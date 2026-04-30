@@ -37,7 +37,7 @@ const {
   normalizeOrg, quarterEndDate, extractDateFromModelId,
   arcModelIdToLab, modelNameToLab,
   filterVerifiedDuplicates, computeCumulativeBest, computeCumulativeMin,
-  generateMatchVerifiedRegex, findCol,
+  generateMatchVerifiedRegex, normalizeVariant, splitVariantFromModel, findCol,
 } = require("../lib/pipeline.js");
 
 // Current quarter midpoint for ARC Prize entries without extractable dates
@@ -85,34 +85,36 @@ const EPOCH_BENCHMARK_FILES = {
 
 // ─── Source 6: Model card data (self-reported, unverified) ────
 // Hardcoded here so the scoped DELETE doesn't wipe it on re-run.
-// Each entry: { benchmark, lab, model, score, date, source, verified }
+// Used only as a fallback when DB-driven fetchModelCardData returns no rows.
+// Each entry: { benchmark, lab, model, score, date, source, verified, variant?, matchVerified }
 const MODEL_CARD_DATA = [
   // GPT-5.4 (https://openai.com/index/introducing-gpt-5-4/, March 5 2026)
-  { benchmark: "hle", lab: "openai", model: "GPT-5.4 Pro (with tools)", score: 58.7, date: new Date("2026-03-05"), source: "model_card", verified: false, matchVerified: /gpt.?5.?4/i },
-  { benchmark: "gpqa", lab: "openai", model: "GPT-5.4 Pro", score: 94.4, date: new Date("2026-03-05"), source: "model_card", verified: false, matchVerified: /gpt.?5.?4/i },
-  { benchmark: "arc-agi-2", lab: "openai", model: "GPT-5.4 Pro", score: 83.3, date: new Date("2026-03-05"), source: "model_card", verified: false, matchVerified: /gpt.?5.?4/i },
-  { benchmark: "arc-agi-1", lab: "openai", model: "GPT-5.4 Pro", score: 94.5, date: new Date("2026-03-05"), source: "model_card", verified: false, matchVerified: /gpt.?5.?4/i },
+  // matchVerified requires "pro" so AA scores for GPT-5.4 mini/nano don't phantom-drop these rows.
+  { benchmark: "hle", lab: "openai", model: "GPT-5.4 Pro", variant: "with tools", score: 58.7, date: new Date("2026-03-05"), source: "model_card", verified: false, matchVerified: /gpt.?5[\.\s-]?4.?pro/i },
+  { benchmark: "gpqa", lab: "openai", model: "GPT-5.4 Pro", score: 94.4, date: new Date("2026-03-05"), source: "model_card", verified: false, matchVerified: /gpt.?5[\.\s-]?4.?pro/i },
+  { benchmark: "arc-agi-2", lab: "openai", model: "GPT-5.4 Pro", score: 83.3, date: new Date("2026-03-05"), source: "model_card", verified: false, matchVerified: /gpt.?5[\.\s-]?4.?pro/i },
+  { benchmark: "arc-agi-1", lab: "openai", model: "GPT-5.4 Pro", score: 94.5, date: new Date("2026-03-05"), source: "model_card", verified: false, matchVerified: /gpt.?5[\.\s-]?4.?pro/i },
 
   // Claude Sonnet 4.6 (https://www.anthropic.com/claude/sonnet, Feb 17 2026)
   { benchmark: "gpqa", lab: "anthropic", model: "Claude Sonnet 4.6", score: 89.9, date: new Date("2026-02-17"), source: "model_card", verified: false, matchVerified: /sonnet.?4[\.\s-]?6/i },
   { benchmark: "swe-bench-verified", lab: "anthropic", model: "Claude Sonnet 4.6", score: 79.6, date: new Date("2026-02-17"), source: "model_card", verified: false, matchVerified: /sonnet.?4[\.\s-]?6/i },
   { benchmark: "arc-agi-2", lab: "anthropic", model: "Claude Sonnet 4.6", score: 58.3, date: new Date("2026-02-17"), source: "model_card", verified: false, matchVerified: /sonnet.?4[\.\s-]?6/i },
-  { benchmark: "hle", lab: "anthropic", model: "Claude Sonnet 4.6 (with tools)", score: 49.0, date: new Date("2026-02-17"), source: "model_card", verified: false, matchVerified: /sonnet.?4[\.\s-]?6/i },
+  { benchmark: "hle", lab: "anthropic", model: "Claude Sonnet 4.6", variant: "with tools", score: 49.0, date: new Date("2026-02-17"), source: "model_card", verified: false, matchVerified: /sonnet.?4[\.\s-]?6/i },
 
   // Claude Opus 4.6 (https://www.anthropic.com/news/claude-opus-4-6, March 2026)
   { benchmark: "gpqa", lab: "anthropic", model: "Claude Opus 4.6", score: 91.3, date: new Date("2026-03-01"), source: "model_card", verified: false, matchVerified: /opus.?4[\.\s-]?6/i },
   { benchmark: "swe-bench-verified", lab: "anthropic", model: "Claude Opus 4.6", score: 80.8, date: new Date("2026-03-01"), source: "model_card", verified: false, matchVerified: /opus.?4[\.\s-]?6/i },
-  { benchmark: "hle", lab: "anthropic", model: "Claude Opus 4.6 (with tools)", score: 53.0, date: new Date("2026-03-01"), source: "model_card", verified: false, matchVerified: /opus.?4[\.\s-]?6/i },
+  { benchmark: "hle", lab: "anthropic", model: "Claude Opus 4.6", variant: "with tools", score: 53.0, date: new Date("2026-03-01"), source: "model_card", verified: false, matchVerified: /opus.?4[\.\s-]?6/i },
   { benchmark: "arc-agi-2", lab: "anthropic", model: "Claude Opus 4.6", score: 68.8, date: new Date("2026-03-01"), source: "model_card", verified: false, matchVerified: /opus.?4[\.\s-]?6/i },
 
   // Gemini 3 Deep Think (https://blog.google/.../gemini-3-deep-think/, Feb 12 2026)
-  { benchmark: "hle", lab: "google", model: "Gemini 3 Deep Think (with tools)", score: 53.4, date: new Date("2026-02-12"), source: "model_card", verified: false, matchVerified: /deep.?think/i },
+  { benchmark: "hle", lab: "google", model: "Gemini 3 Deep Think", variant: "with tools", score: 53.4, date: new Date("2026-02-12"), source: "model_card", verified: false, matchVerified: /deep.?think/i },
   { benchmark: "hle", lab: "google", model: "Gemini 3 Deep Think", score: 48.4, date: new Date("2026-02-12"), source: "model_card", verified: false, matchVerified: /deep.?think/i },
   { benchmark: "arc-agi-2", lab: "google", model: "Gemini 3 Deep Think", score: 84.6, date: new Date("2026-02-12"), source: "model_card", verified: false, matchVerified: /deep.?think/i },
 
   // Gemini 3.1 Pro (https://blog.google/.../gemini-3-1-pro/, Feb 19 2026)
   { benchmark: "gpqa", lab: "google", model: "Gemini 3.1 Pro", score: 94.3, date: new Date("2026-02-19"), source: "model_card", verified: false, matchVerified: /gemini.?3[\.\s-]?1.?pro/i },
-  { benchmark: "hle", lab: "google", model: "Gemini 3.1 Pro (with tools)", score: 51.4, date: new Date("2026-02-19"), source: "model_card", verified: false, matchVerified: /gemini.?3[\.\s-]?1.?pro/i },
+  { benchmark: "hle", lab: "google", model: "Gemini 3.1 Pro", variant: "with tools", score: 51.4, date: new Date("2026-02-19"), source: "model_card", verified: false, matchVerified: /gemini.?3[\.\s-]?1.?pro/i },
   { benchmark: "hle", lab: "google", model: "Gemini 3.1 Pro", score: 44.4, date: new Date("2026-02-19"), source: "model_card", verified: false, matchVerified: /gemini.?3[\.\s-]?1.?pro/i },
   { benchmark: "arc-agi-2", lab: "google", model: "Gemini 3.1 Pro", score: 77.1, date: new Date("2026-02-19"), source: "model_card", verified: false, matchVerified: /gemini.?3[\.\s-]?1.?pro/i },
 ];
@@ -141,7 +143,7 @@ async function fetchModelCardData(supabase) {
   // Auto-extracted (source='model_card_auto') — only include triaged 'ingest'.
   const { data, error } = await supabase
     .from("benchmark_raw")
-    .select("benchmark, lab, model, score, date, source, verified")
+    .select("benchmark, lab, model, model_variant, score, date, source, verified")
     .or("source.eq.model_card,and(source.eq.model_card_auto,triage_status.eq.ingest)");
 
   if (error) {
@@ -154,16 +156,22 @@ async function fetchModelCardData(supabase) {
     return null;
   }
 
-  return data.map(row => ({
-    benchmark: row.benchmark,
-    lab: row.lab,
-    model: row.model,
-    score: row.score,
-    date: new Date(row.date),
-    source: row.source,
-    verified: row.verified === true,
-    matchVerified: generateMatchVerifiedRegex(row.model),
-  }));
+  return data.map(row => {
+    // Pull legacy "(with tools)" out of model name when model_variant column is null.
+    // SQL column model_variant → in-memory field variant (translated at the boundary).
+    const { model, variant } = splitVariantFromModel(row.model, normalizeVariant(row.model_variant));
+    return {
+      benchmark: row.benchmark,
+      lab: row.lab,
+      model,
+      score: row.score,
+      date: new Date(row.date),
+      source: row.source,
+      verified: row.verified === true,
+      variant,
+      matchVerified: generateMatchVerifiedRegex(model),
+    };
+  });
 }
 
 // ─── HTTP helpers ────────────────────────────────────────────
@@ -810,6 +818,8 @@ async function main() {
           model: best !== null && !tooEarly ? best.model || null : null,
           source: best !== null && !tooEarly ? best.source || null : null,
           verified: best !== null && !tooEarly ? best.verified : true,
+          // SQL column model_variant; in-memory field variant.
+          model_variant: best !== null && !tooEarly ? best.variant ?? null : null,
         });
       }
     }
@@ -830,6 +840,7 @@ async function main() {
           model: null,
           source: null,
           verified: true,
+          model_variant: null,
         });
       }
     }
