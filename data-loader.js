@@ -14,7 +14,9 @@ let COST_DATA = {};
 let costLoadFailed = false;
 
 async function loadBenchmarkScores() {
-  const url = `${SUPABASE_URL}/rest/v1/benchmark_scores?select=benchmark,lab,quarter,score,model,source,verified&order=benchmark,lab,quarter`;
+  // select=* keeps this query schema-tolerant: if a new column (e.g. model_variant)
+  // hasn't been migrated yet, the query still succeeds and the field is undefined.
+  const url = `${SUPABASE_URL}/rest/v1/benchmark_scores?select=*&order=benchmark,lab,quarter`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -73,6 +75,8 @@ async function loadBenchmarkScores() {
               model: row.model || null,
               source: row.source || null,
               verified: row.verified !== false,
+              // SQL column model_variant → in-memory field variant. ?? null tolerates pre-migration rows.
+              variant: row.model_variant ?? null,
             }
           : null;
       }

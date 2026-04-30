@@ -6,12 +6,20 @@ const {
   extractDateFromModelId,
   arcModelIdToLab,
   modelNameToLab,
+  HARNESS_KEYWORDS,
+  isHarnessVariant,
+  isAcknowledgedConfigVariant,
+  normalizeVariant,
+  splitVariantFromModel,
   filterVerifiedDuplicates,
   computeCumulativeBest,
   computeCumulativeMin,
   generateMatchVerifiedRegex,
   findCol,
+  shouldRegenerateAnalyses,
 } = require("../lib/pipeline.js");
+
+const { compareQuarters } = require("../lib/config.js");
 
 // ─── normalizeOrg ────────────────────────────────────────────
 
@@ -210,6 +218,38 @@ describe("filterVerifiedDuplicates", () => {
     expect(filtered).toHaveLength(1);
     expect(filtered[0].source).toBe("artificialanalysis");
   });
+
+  it("preserves harness variant rows even when verified match exists", () => {
+    const points = [
+      { benchmark: "hle", lab: "anthropic", model: "Claude Opus 4.7", source: "artificialanalysis", verified: true },
+      { benchmark: "hle", lab: "anthropic", model: "Claude Opus 4.7", variant: "with tools", score: 54.7, source: "model_card_auto", verified: false, matchVerified: /opus.?4[\.\s-]?7/i },
+    ];
+    const filtered = filterVerifiedDuplicates(points);
+    expect(filtered).toHaveLength(2);
+    expect(filtered.find(p => p.variant === "with tools")).toBeTruthy();
+  });
+
+  it("drops null-variant model_card when verified match exists; keeps harness sibling", () => {
+    const points = [
+      { benchmark: "hle", lab: "anthropic", model: "Claude Opus 4.7", source: "artificialanalysis", verified: true },
+      { benchmark: "hle", lab: "anthropic", model: "Claude Opus 4.7", variant: null, score: 46.9, source: "model_card_auto", verified: false, matchVerified: /opus.?4[\.\s-]?7/i },
+      { benchmark: "hle", lab: "anthropic", model: "Claude Opus 4.7", variant: "with tools", score: 54.7, source: "model_card_auto", verified: false, matchVerified: /opus.?4[\.\s-]?7/i },
+    ];
+    const filtered = filterVerifiedDuplicates(points);
+    expect(filtered).toHaveLength(2);
+    const sources = filtered.map(p => `${p.source}:${p.variant ?? "null"}`).sort();
+    expect(sources).toEqual(["artificialanalysis:null", "model_card_auto:with tools"]);
+  });
+
+  it("config-only variant ('xhigh') is superseded by verified score", () => {
+    const points = [
+      { benchmark: "gpqa", lab: "openai", model: "GPT-5.4 mini", source: "artificialanalysis", verified: true },
+      { benchmark: "gpqa", lab: "openai", model: "GPT-5.4 mini", variant: "xhigh", source: "model_card_auto", verified: false, matchVerified: /gpt.?5[\.\s-]?4.?mini/i },
+    ];
+    const filtered = filterVerifiedDuplicates(points);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].source).toBe("artificialanalysis");
+  });
 });
 
 // ─── computeCumulativeBest ───────────────────────────────────
@@ -271,6 +311,50 @@ describe("computeCumulativeBest", () => {
     expect(result["Q1 2024"]).toBeNull();
     expect(result["Q2 2024"]).toBeNull();
     expect(result["Q3 2024"]).toBeNull();
+  });
+
+  it("defaults variant to null on baseline points", () => {
+    const points = [
+      { date: new Date("2024-01-15"), score: 50, model: "A", source: "test", verified: true },
+    ];
+    const result = computeCumulativeBest(points, quarters);
+    expect(result["Q1 2024"].variant).toBeNull();
+  });
+
+  it("carries the winning point's variant", () => {
+    const points = [
+      { date: new Date("2024-01-15"), score: 46.9, model: "Opus 4.7", source: "model_card_auto", verified: false, variant: null },
+      { date: new Date("2024-04-15"), score: 54.7, model: "Opus 4.7", source: "model_card_auto", verified: false, variant: "with tools" },
+    ];
+    const result = computeCumulativeBest(points, quarters);
+    expect(result["Q1 2024"].variant).toBeNull();
+    expect(result["Q2 2024"].variant).toBe("with tools");
+    expect(result["Q3 2024"].variant).toBe("with tools"); // carried forward
+  });
+
+  it("two unverified ties are deterministic regardless of input order", () => {
+    // Same date, same score, same lab+benchmark — input order from Postgres is unspecified.
+    // Must produce the same winner either way (alphabetical model fallback).
+    const points1 = [
+      { date: new Date("2024-01-15"), score: 60, model: "Beta",  source: "model_card", verified: false, variant: null },
+      { date: new Date("2024-01-15"), score: 60, model: "Alpha", source: "model_card", verified: false, variant: "with tools" },
+    ];
+    const points2 = [...points1].reverse();
+    const r1 = computeCumulativeBest(points1, quarters);
+    const r2 = computeCumulativeBest(points2, quarters);
+    expect(r1["Q1 2024"]).toEqual(r2["Q1 2024"]);
+  });
+
+  it("verified wins ties (deterministic across runs)", () => {
+    const points = [
+      // unverified arrives first by date
+      { date: new Date("2024-01-10"), score: 60, model: "Unverified", source: "model_card", verified: false, variant: "with tools" },
+      { date: new Date("2024-01-20"), score: 60, model: "Verified", source: "artificialanalysis", verified: true, variant: null },
+    ];
+    const result = computeCumulativeBest(points, quarters);
+    expect(result["Q1 2024"].verified).toBe(true);
+    expect(result["Q1 2024"].model).toBe("Verified");
+    expect(result["Q1 2024"].variant).toBeNull();
   });
 });
 
@@ -370,5 +454,261 @@ describe("generateMatchVerifiedRegex", () => {
     const re = generateMatchVerifiedRegex("GPT-5.4 Pro");
     expect(re.test("Claude Sonnet 4.6")).toBe(false);
     expect(re.test("Gemini 3.1 Pro")).toBe(false);
+  });
+
+  it("paren cleanup is regex-equivalent: '(with tools)' makes no difference", () => {
+    // Locks in the invariant that splitting (with tools) into a separate variant
+    // field doesn't change the matchVerified regex for hardcoded MODEL_CARD_DATA rows.
+    expect(generateMatchVerifiedRegex("Claude Opus 4.6 (with tools)").source)
+      .toBe(generateMatchVerifiedRegex("Claude Opus 4.6").source);
+    expect(generateMatchVerifiedRegex("Gemini 3.1 Pro (with tools)").source)
+      .toBe(generateMatchVerifiedRegex("Gemini 3.1 Pro").source);
+  });
+});
+
+// ─── normalizeVariant ────────────────────────────────────────
+
+describe("normalizeVariant", () => {
+  it("returns null for null/undefined/empty", () => {
+    expect(normalizeVariant(null)).toBeNull();
+    expect(normalizeVariant(undefined)).toBeNull();
+    expect(normalizeVariant("")).toBeNull();
+    expect(normalizeVariant("   ")).toBeNull();
+  });
+
+  it("returns null for non-string inputs (objects, arrays, numbers)", () => {
+    expect(normalizeVariant({ foo: "bar" })).toBeNull();
+    expect(normalizeVariant(["a", "b"])).toBeNull();
+    expect(normalizeVariant(42)).toBeNull();
+    expect(normalizeVariant(true)).toBeNull();
+  });
+
+  it("returns null for string-literal nullish values", () => {
+    expect(normalizeVariant("null")).toBeNull();
+    expect(normalizeVariant("Null")).toBeNull();
+    expect(normalizeVariant("undefined")).toBeNull();
+    expect(normalizeVariant("None")).toBeNull();
+  });
+
+  it("treats explicit no-tools strings as standard (null)", () => {
+    expect(normalizeVariant("no tools")).toBeNull();
+    expect(normalizeVariant("No Tools")).toBeNull();
+    expect(normalizeVariant("without tools")).toBeNull();
+    expect(normalizeVariant("no tool")).toBeNull();
+    expect(normalizeVariant("without tool")).toBeNull();
+  });
+
+  it("canonicalizes with-tools variants", () => {
+    expect(normalizeVariant("with tools")).toBe("with tools");
+    expect(normalizeVariant("with tool")).toBe("with tools");
+    expect(normalizeVariant("With Tools")).toBe("with tools");
+    expect(normalizeVariant("  with tools  ")).toBe("with tools");
+  });
+
+  it("collapses unicode whitespace (e.g. NBSP) before checking", () => {
+    expect(normalizeVariant("with tools")).toBe("with tools");
+  });
+
+  it("passes unknown variants through verbatim (preserving case)", () => {
+    expect(normalizeVariant("xhigh")).toBe("xhigh");
+    expect(normalizeVariant("Think")).toBe("Think");
+    expect(normalizeVariant("Speciale")).toBe("Speciale");
+    expect(normalizeVariant("with Python")).toBe("with Python");
+  });
+});
+
+// ─── isHarnessVariant ────────────────────────────────────────
+
+describe("isHarnessVariant", () => {
+  it("returns false for null/empty", () => {
+    expect(isHarnessVariant(null)).toBe(false);
+    expect(isHarnessVariant(undefined)).toBe(false);
+    expect(isHarnessVariant("")).toBe(false);
+  });
+
+  it("matches all listed harness keywords", () => {
+    // Reference samples that exercise each branch of HARNESS_PATTERN.
+    const positives = [
+      "with tools", "with tool", "with python", "with search", "with browser",
+      "with code exec", "with code interpreter", "with harness", "with computer use",
+      "tool use", "code interpreter", "function calling",
+      "agent", "agentic", "agent mode", "agent harness", "agent scaffold",
+      "scaffold", "scaffolding", "browsing", "browsing enabled", "internet access",
+      // Bare nouns and compound forms seen in real extraction
+      "python", "search", "browser", "code execution",
+    ];
+    for (const v of positives) {
+      expect(isHarnessVariant(v), `expected ${JSON.stringify(v)} to be harness`).toBe(true);
+    }
+    // Sanity check: HARNESS_KEYWORDS list isn't empty (catches accidental deletion)
+    expect(HARNESS_KEYWORDS.length).toBeGreaterThan(5);
+  });
+
+  it("matches real-world plus-separated tool lists", () => {
+    expect(isHarnessVariant("Python + Search")).toBe(true);
+    expect(isHarnessVariant("Search + code execution")).toBe(true);
+    expect(isHarnessVariant("Search (blocklist) + Code")).toBe(true);
+  });
+
+  it("returns false for config knobs and unknown strings", () => {
+    expect(isHarnessVariant("xhigh")).toBe(false);
+    expect(isHarnessVariant("high")).toBe(false);
+    expect(isHarnessVariant("medium")).toBe(false);
+    expect(isHarnessVariant("Think")).toBe(false);
+    expect(isHarnessVariant("Thinking")).toBe(false);
+    expect(isHarnessVariant("Speciale")).toBe(false);
+  });
+
+  it("is case-insensitive and tolerates surrounding whitespace", () => {
+    expect(isHarnessVariant("With Tools")).toBe(true);
+    expect(isHarnessVariant("  with tools  ")).toBe(true);
+    expect(isHarnessVariant("WITH TOOLS")).toBe(true);
+  });
+});
+
+// ─── splitVariantFromModel ───────────────────────────────────
+
+describe("splitVariantFromModel", () => {
+  it("strips '(with tools)' from model and promotes to variant when variant is null", () => {
+    expect(splitVariantFromModel("Claude Opus 4.6 (with tools)", null))
+      .toEqual({ model: "Claude Opus 4.6", variant: "with tools" });
+  });
+
+  it("strips '(no tools)' / '(without tools)' to null variant", () => {
+    expect(splitVariantFromModel("Claude Opus 4.7 (no tools)", null))
+      .toEqual({ model: "Claude Opus 4.7", variant: null });
+    expect(splitVariantFromModel("Claude Opus 4.7 (without tools)", null))
+      .toEqual({ model: "Claude Opus 4.7", variant: null });
+  });
+
+  it("does not touch parens that aren't tool variants", () => {
+    expect(splitVariantFromModel("GPT-4o (mini)", null))
+      .toEqual({ model: "GPT-4o (mini)", variant: null });
+    expect(splitVariantFromModel("Claude (Beta)", null))
+      .toEqual({ model: "Claude (Beta)", variant: null });
+  });
+
+  it("preserves an existing non-null variant rather than re-deriving", () => {
+    expect(splitVariantFromModel("Claude Opus 4.6 (with tools)", "with tools"))
+      .toEqual({ model: "Claude Opus 4.6 (with tools)", variant: "with tools" });
+  });
+
+  it("handles plain model names with no parens", () => {
+    expect(splitVariantFromModel("Claude Sonnet 4.6", null))
+      .toEqual({ model: "Claude Sonnet 4.6", variant: null });
+  });
+});
+
+// ─── isAcknowledgedConfigVariant ─────────────────────────────
+
+describe("isAcknowledgedConfigVariant", () => {
+  it("returns true for known config strings (case-insensitive)", () => {
+    expect(isAcknowledgedConfigVariant("xhigh")).toBe(true);
+    expect(isAcknowledgedConfigVariant("XHigh")).toBe(true);
+    expect(isAcknowledgedConfigVariant("high")).toBe(true);
+    expect(isAcknowledgedConfigVariant("Think")).toBe(true);
+    expect(isAcknowledgedConfigVariant("Thinking")).toBe(true);
+    expect(isAcknowledgedConfigVariant("Speciale")).toBe(true);
+  });
+
+  it("returns false for harness variants and unknown strings", () => {
+    expect(isAcknowledgedConfigVariant("with tools")).toBe(false);
+    expect(isAcknowledgedConfigVariant("with python")).toBe(false);
+    expect(isAcknowledgedConfigVariant("brand new variant")).toBe(false);
+  });
+
+  it("returns false for null/empty", () => {
+    expect(isAcknowledgedConfigVariant(null)).toBe(false);
+    expect(isAcknowledgedConfigVariant("")).toBe(false);
+  });
+});
+
+// ─── shouldRegenerateAnalyses ───────────────────────────────
+
+describe("shouldRegenerateAnalyses", () => {
+  const presets = ["all-time", "last-12-months", "last-6-months", "last-3-months", "2024", "2025"];
+  const currentQuarter = "Q2 2026";
+  const freshNow = new Date("2026-04-30T12:00:00Z");
+
+  // A "fresh" cache: every preset present, all rolling presets at currentQuarter,
+  // generated_at recent. Year presets keep their fixed end_quarter.
+  const freshCache = [
+    { date_range: "all-time",        end_quarter: "Q2 2026", generated_at: "2026-04-29T12:00:00Z" },
+    { date_range: "last-12-months",  end_quarter: "Q2 2026", generated_at: "2026-04-29T12:00:00Z" },
+    { date_range: "last-6-months",   end_quarter: "Q2 2026", generated_at: "2026-04-29T12:00:00Z" },
+    { date_range: "last-3-months",   end_quarter: "Q2 2026", generated_at: "2026-04-29T12:00:00Z" },
+    { date_range: "2024",            end_quarter: "Q4 2024", generated_at: "2026-04-29T12:00:00Z" },
+    { date_range: "2025",            end_quarter: "Q4 2025", generated_at: "2026-04-29T12:00:00Z" },
+  ];
+
+  const baseInput = {
+    changeCount: 0,
+    costChangeCount: 0,
+    cachedRows: freshCache,
+    expectedPresets: presets,
+    currentQuarter,
+    compareQuarters,
+    now: freshNow,
+  };
+
+  it("regens when changeCount > 0", () => {
+    const r = shouldRegenerateAnalyses({ ...baseInput, changeCount: 3 });
+    expect(r.shouldRegen).toBe(true);
+    expect(r.reason).toContain("3 score change");
+  });
+
+  it("regens when costChangeCount > 0 only", () => {
+    const r = shouldRegenerateAnalyses({ ...baseInput, costChangeCount: 2 });
+    expect(r.shouldRegen).toBe(true);
+    expect(r.reason).toContain("2 cost change");
+    expect(r.reason).not.toContain("score");
+  });
+
+  it("regens with both change types and lists each", () => {
+    const r = shouldRegenerateAnalyses({ ...baseInput, changeCount: 1, costChangeCount: 4 });
+    expect(r.shouldRegen).toBe(true);
+    expect(r.reason).toContain("1 score change");
+    expect(r.reason).toContain("4 cost change");
+  });
+
+  it("regens when cache is empty (first run)", () => {
+    const r = shouldRegenerateAnalyses({ ...baseInput, cachedRows: [] });
+    expect(r.shouldRegen).toBe(true);
+    expect(r.reason).toMatch(/no cached analyses/);
+  });
+
+  it("regens when a preset has no cached row, naming the missing preset", () => {
+    const partial = freshCache.filter(r => r.date_range !== "2025");
+    const r = shouldRegenerateAnalyses({ ...baseInput, cachedRows: partial });
+    expect(r.shouldRegen).toBe(true);
+    expect(r.reason).toContain("2025");
+  });
+
+  it("regens when quarter has rolled over", () => {
+    const stale = freshCache.map(row =>
+      row.end_quarter === "Q2 2026" ? { ...row, end_quarter: "Q1 2026" } : row
+    );
+    const r = shouldRegenerateAnalyses({ ...baseInput, cachedRows: stale });
+    expect(r.shouldRegen).toBe(true);
+    expect(r.reason).toContain("rollover");
+    expect(r.reason).toContain("Q1 2026");
+    expect(r.reason).toContain("Q2 2026");
+  });
+
+  it("regens when oldest cached row exceeds maxAgeDays", () => {
+    const stale = freshCache.map(row =>
+      row.date_range === "all-time"
+        ? { ...row, generated_at: "2026-03-15T12:00:00Z" } // ~46 days before freshNow
+        : row
+    );
+    const r = shouldRegenerateAnalyses({ ...baseInput, cachedRows: stale, maxAgeDays: 30 });
+    expect(r.shouldRegen).toBe(true);
+    expect(r.reason).toMatch(/\d+d old/);
+  });
+
+  it("skips when nothing has changed and cache is fresh and complete", () => {
+    const r = shouldRegenerateAnalyses(baseInput);
+    expect(r.shouldRegen).toBe(false);
+    expect(r.reason).toMatch(/no score\/cost changes/);
   });
 });

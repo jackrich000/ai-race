@@ -16,7 +16,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const require = createRequire(import.meta.url);
-const { BENCHMARK_META, LABS, LAB_KEYS } = require("../lib/config.js");
+const { BENCHMARK_META, LABS, LAB_KEYS, TIME_LABELS, compareQuarters, getPresets } = require("../lib/config.js");
+const { isHarnessVariant, isAcknowledgedConfigVariant, normalizeVariant, shouldRegenerateAnalyses } = require("../lib/pipeline.js");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,8 +43,8 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const DRY_RUN = process.argv.includes("--dry-run");
 const SKIP_EXTRACT = process.argv.includes("--skip-extract");
 
-// Automated benchmarks (must match update-data.js)
-const AUTOMATED_BENCHMARKS = ["swe-bench-verified", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime", "frontiermath", "math-l5"];
+// Automated benchmarks (must match update-data.js's automatedBenchmarks list)
+const AUTOMATED_BENCHMARKS = ["swe-bench-verified", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime", "frontiermath", "math-l5", "swe-bench-pro"];
 
 // Labs that have automated extraction via model card scraping
 const EXTRACTED_LABS = ["openai", "anthropic", "google", "xai", "chinese"];
@@ -94,6 +95,41 @@ async function snapshotBestScores(supabase) {
     }
   }
   return best;
+}
+
+/**
+ * Snapshot cost_intelligence rows. update-data.js delete+inserts this table
+ * each run, so we compare a normalized representation of every row to detect
+ * semantic changes (new cheapest model, price drop, new quarter).
+ * Returns Map of "benchmark|quarter" → "price|model|lab".
+ */
+async function snapshotCostIntelligence(supabase) {
+  const { data, error } = await supabase
+    .from("cost_intelligence")
+    .select("benchmark, quarter, price, model, lab");
+
+  if (error) throw new Error(`cost_intelligence snapshot failed: ${error.message}`);
+
+  const snap = new Map();
+  for (const row of data || []) {
+    snap.set(`${row.benchmark}|${row.quarter}`, `${row.price}|${row.model}|${row.lab}`);
+  }
+  return snap;
+}
+
+/**
+ * Count differences between two cost_intelligence snapshots.
+ * Counts changed values, new keys, and removed keys.
+ */
+function diffCostIntelligence(before, after) {
+  let count = 0;
+  for (const [k, v] of after) {
+    if (before.get(k) !== v) count++;
+  }
+  for (const [k] of before) {
+    if (!after.has(k)) count++;
+  }
+  return count;
 }
 
 /**
@@ -221,6 +257,39 @@ async function queryRejectedItems(supabase, runStartTime) {
 }
 
 /**
+ * Query model_card_auto rows whose model_variant is unknown (neither matched
+ * by HARNESS_PATTERN nor in ACKNOWLEDGED_CONFIG_VARIANTS). Surfaces variants
+ * across all runs, not just this one — so missing a week doesn't silently
+ * lose visibility. Jack reviews each unique variant once: either add a keyword
+ * to HARNESS_KEYWORDS (real harness) or add the string to
+ * ACKNOWLEDGED_CONFIG_VARIANTS in lib/pipeline.js (config knob).
+ */
+async function queryUnknownVariants(supabase) {
+  const { data, error } = await supabase
+    .from("benchmark_raw")
+    .select("benchmark, lab, model, model_variant, score, source_url, extracted_at")
+    .eq("triage_status", "ingest")
+    .eq("source", "model_card_auto")
+    .not("model_variant", "is", null)
+    .order("extracted_at", { ascending: false });
+
+  if (error) {
+    console.warn(`  Warning: Failed to query unknown variants: ${error.message}`);
+    return [];
+  }
+
+  return (data || []).filter(row => {
+    // Normalize first so "without tools"/"no tools" (which become null at ingestion
+    // and never reach the chart as variants) don't clutter the review.
+    const v = normalizeVariant(row.model_variant);
+    if (!v) return false;
+    if (isHarnessVariant(v)) return false;
+    if (isAcknowledgedConfigVariant(v)) return false;
+    return true;
+  });
+}
+
+/**
  * Query last extraction date per lab from benchmark_raw.
  * Returns array of { lab, lastExtraction, stale } objects.
  */
@@ -301,7 +370,7 @@ function sourceName(key) {
 /**
  * Build the combined GitHub issue report.
  */
-function buildReport({ changes, flagged, rejected, extractResult, ingestResult, labFreshness, runDate, extractionCrashed, browserbaseSkipped }) {
+function buildReport({ changes, flagged, rejected, unknownVariants, extractResult, ingestResult, labFreshness, runDate, regen, extractionCrashed, browserbaseSkipped }) {
   const parts = [];
 
   // ─── Header ─────────────────────────────────────────────
@@ -315,6 +384,9 @@ function buildReport({ changes, flagged, rejected, extractResult, ingestResult, 
 
   parts.push(`## Pipeline Run (${runDate})`);
   parts.push(`Extraction: ${extractStatus} | Ingestion: ${ingestStatus}`);
+  if (regen) {
+    parts.push(`Analyses regeneration: ${regen.shouldRegen ? "queued" : "skipped"} — ${regen.reason}`);
+  }
   parts.push("");
 
   // ─── Extraction issues (crash or Browserbase unavailability) ─
@@ -385,6 +457,27 @@ function buildReport({ changes, flagged, rejected, extractResult, ingestResult, 
       const reason = item.triage_reason || "No reason recorded";
       parts.push(`- **${item.model}** on **${benchmarkName(item.benchmark)}**: ${item.score}${variant}`);
       parts.push(`  Reason: ${reason} | [Source](${item.source_url})`);
+    }
+    parts.push("");
+  }
+
+  // ─── Variant Review ─────────────────────────────────────
+  // Variants that aren't classified as harness and aren't in the acknowledged-config
+  // set. Each unique string is a one-time decision: edit lib/pipeline.js to either
+  // add a HARNESS_KEYWORDS entry (real harness) or add to ACKNOWLEDGED_CONFIG_VARIANTS.
+  if (unknownVariants && unknownVariants.length > 0) {
+    parts.push(`## Variant Review (${unknownVariants.length})`);
+    parts.push("Unrecognized variants currently being ingested. Decide for each unique variant string:");
+    parts.push("- If it's a harness/scaffold (different evaluation rig): add a keyword to `HARNESS_KEYWORDS` in `lib/pipeline.js`.");
+    parts.push("- If it's a config knob (same rig, different settings): add the lowercase string to `ACKNOWLEDGED_CONFIG_VARIANTS`.");
+    parts.push("");
+    for (const item of unknownVariants) {
+      const since = item.extracted_at ? item.extracted_at.split("T")[0] : "unknown";
+      const sourceLink = item.source_url ? ` | [Source](${item.source_url})` : "";
+      // Show the normalized form (what actually reaches the chart and is matched
+      // by HARNESS_PATTERN / ACKNOWLEDGED_CONFIG_VARIANTS at runtime).
+      const displayVariant = normalizeVariant(item.model_variant) ?? item.model_variant;
+      parts.push(`- **${item.model}** on **${benchmarkName(item.benchmark)}**: ${item.score} \`[${displayVariant}]\` (since ${since})${sourceLink}`);
     }
     parts.push("");
   }
@@ -487,7 +580,8 @@ async function main() {
   // ─── Step 1: Snapshot current best scores ───────────────
   console.log("\nStep 1: Snapshotting current best scores...");
   const beforeSnapshot = await snapshotBestScores(supabase);
-  console.log(`  Snapshot: ${beforeSnapshot.size} (benchmark, lab) pairs`);
+  const beforeCostSnapshot = await snapshotCostIntelligence(supabase);
+  console.log(`  Snapshot: ${beforeSnapshot.size} (benchmark, lab) pairs, ${beforeCostSnapshot.size} cost rows`);
 
   // ─── Step 2: Run extraction ─────────────────────────────
   let extractResult = null;
@@ -576,13 +670,47 @@ async function main() {
     }
   }
 
-  // ─── Step 6: Query flagged, rejected, and freshness ─────
-  console.log("\nStep 6: Querying flagged, rejected, and lab freshness...");
+  const afterCostSnapshot = await snapshotCostIntelligence(supabase);
+  const costChangeCount = diffCostIntelligence(beforeCostSnapshot, afterCostSnapshot);
+  console.log(`  ${costChangeCount} cost intelligence change${costChangeCount !== 1 ? "s" : ""} detected.`);
+
+  // ─── Step 5.5: Compute analyses-regen gate ──────────────
+  console.log("\nStep 5.5: Computing analyses-regen gate...");
+  const { data: cachedRows, error: cachedErr } = await supabase
+    .from("cached_analyses")
+    .select("date_range, end_quarter, generated_at");
+  if (cachedErr) {
+    console.warn(`  Warning: cached_analyses query failed (${cachedErr.message}). Defaulting to regen.`);
+  }
+  const regen = cachedErr
+    ? { shouldRegen: true, reason: `cached_analyses query error: ${cachedErr.message}` }
+    : shouldRegenerateAnalyses({
+        changeCount: changes.length,
+        costChangeCount,
+        cachedRows: cachedRows || [],
+        expectedPresets: getPresets(),
+        currentQuarter: TIME_LABELS[TIME_LABELS.length - 1],
+        compareQuarters,
+      });
+  console.log(`  Analyses regen: ${regen.shouldRegen ? "queued" : "skipped"} (${regen.reason})`);
+
+  if (process.env.GITHUB_OUTPUT) {
+    try {
+      fs.appendFileSync(process.env.GITHUB_OUTPUT, `should_regen_analyses=${regen.shouldRegen}\n`);
+    } catch (err) {
+      console.warn(`  Warning: failed to write GITHUB_OUTPUT (${err.message}).`);
+    }
+  }
+
+  // ─── Step 6: Query flagged, rejected, variants, and freshness ─────
+  console.log("\nStep 6: Querying flagged, rejected, unknown variants, and lab freshness...");
   const flagged = await queryFlaggedItems(supabase, runStartTime);
   const rejected = await queryRejectedItems(supabase, runStartTime);
+  const unknownVariants = await queryUnknownVariants(supabase);
   const labFreshness = await queryLabFreshness(supabase);
   console.log(`  Flagged: ${flagged.newItems.length} new, ${flagged.carriedOver.length} carried over`);
   console.log(`  Rejected: ${rejected.length} this run`);
+  console.log(`  Unknown variants needing review: ${unknownVariants.length}`);
   const staleLabs = labFreshness.filter(l => l.stale);
   if (staleLabs.length > 0) {
     console.warn(`  Stale labs: ${staleLabs.map(l => labName(l.lab)).join(", ")}`);
@@ -596,10 +724,12 @@ async function main() {
     changes,
     flagged,
     rejected,
+    unknownVariants,
     extractResult,
     ingestResult,
     labFreshness,
     runDate,
+    regen,
     extractionCrashed,
     browserbaseSkipped,
   });

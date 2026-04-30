@@ -76,7 +76,7 @@ describe("isBenchmarkActive", () => {
   });
 
   it("returns true for benchmarks with no activeUntil", () => {
-    expect(isBenchmarkActive("gpqa", "Q4 2030")).toBe(true);
+    expect(isBenchmarkActive("hle", "Q4 2030")).toBe(true);
   });
 });
 
