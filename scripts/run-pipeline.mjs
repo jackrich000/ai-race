@@ -11,6 +11,7 @@ import { createRequire } from "module";
 import { spawn } from "child_process";
 import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -49,6 +50,21 @@ const EXTRACTED_LABS = ["openai", "anthropic", "google", "xai", "chinese"];
 
 // Staleness threshold: warn if a lab hasn't had new extraction data in this many weeks
 const STALENESS_WEEKS = 6;
+
+// Marker files (must match scripts/extract-model-cards.mjs)
+const MARKER_DIR = os.tmpdir();
+const MARKER_STARTED = path.join(MARKER_DIR, "ai-race-extraction-started.json");
+const MARKER_COMPLETE = path.join(MARKER_DIR, "ai-race-extraction-complete.json");
+const MARKER_BB_SKIP = path.join(MARKER_DIR, "ai-race-browserbase-skip.json");
+
+function readMarker(filePath) {
+  try { return JSON.parse(fs.readFileSync(filePath, "utf8")); }
+  catch { return null; }
+}
+
+function unlinkMarker(filePath) {
+  try { fs.unlinkSync(filePath); } catch { /* not present, fine */ }
+}
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -285,18 +301,44 @@ function sourceName(key) {
 /**
  * Build the combined GitHub issue report.
  */
-function buildReport({ changes, flagged, rejected, extractResult, ingestResult, labFreshness, runDate }) {
+function buildReport({ changes, flagged, rejected, extractResult, ingestResult, labFreshness, runDate, extractionCrashed, browserbaseSkipped }) {
   const parts = [];
 
   // ─── Header ─────────────────────────────────────────────
-  const extractStatus = extractResult
-    ? (extractResult.code === 0 ? "OK" : `FAILED (exit ${extractResult.code})`)
-    : "Skipped";
+  let extractStatus;
+  if (!extractResult) extractStatus = "Skipped";
+  else if (extractionCrashed) extractStatus = "CRASHED (no completion marker)";
+  else if (extractResult.code === 0) extractStatus = "OK";
+  else extractStatus = `FAILED (exit ${extractResult.code})`;
+
   const ingestStatus = ingestResult.code === 0 ? "OK" : `FAILED (exit ${ingestResult.code})`;
 
   parts.push(`## Pipeline Run (${runDate})`);
   parts.push(`Extraction: ${extractStatus} | Ingestion: ${ingestStatus}`);
   parts.push("");
+
+  // ─── Extraction issues (crash or Browserbase unavailability) ─
+  if (extractionCrashed) {
+    parts.push("## ⚠ Extraction Crashed");
+    parts.push("The extraction subprocess exited without writing a completion marker. ");
+    parts.push("This usually means a fatal error mid-run (browser crash, OOM, network hang). ");
+    parts.push("Check the Actions log for the stack trace.");
+    parts.push("");
+  }
+  if (browserbaseSkipped && browserbaseSkipped.skippedUrls?.length > 0) {
+    parts.push("## ⚠ Browserbase Unavailable");
+    parts.push(`Skipped extraction for ${browserbaseSkipped.skippedUrls.length} article(s) flagged as \`useBrowserbase\` (currently OpenAI). `);
+    parts.push("Other labs ingested normally. Causes: quota exhausted, API outage, key rotation.");
+    parts.push("");
+    parts.push("<details><summary>Skipped URLs</summary>");
+    parts.push("");
+    for (const item of browserbaseSkipped.skippedUrls) {
+      parts.push(`- ${item.url}${item.reason ? `  \n  _${item.reason}_` : ""}`);
+    }
+    parts.push("");
+    parts.push("</details>");
+    parts.push("");
+  }
 
   // ─── Needs Review ───────────────────────────────────────
   const totalFlagged = flagged.newItems.length + flagged.carriedOver.length;
@@ -449,11 +491,18 @@ async function main() {
 
   // ─── Step 2: Run extraction ─────────────────────────────
   let extractResult = null;
+  let extractionCrashed = false;
+  let browserbaseSkipped = null; // payload from .browserbase-skip.json if present
 
   if (SKIP_EXTRACT) {
     console.log("\nStep 2: Extraction skipped (--skip-extract)");
   } else {
-    const extractArgs = ["--local", "--no-report"];
+    // Defensive: clear any stale markers from a prior run before launching
+    unlinkMarker(MARKER_STARTED);
+    unlinkMarker(MARKER_COMPLETE);
+    unlinkMarker(MARKER_BB_SKIP);
+
+    const extractArgs = ["--no-report"];
     if (DRY_RUN) extractArgs.push("--dry-run");
 
     extractResult = await runScript(
@@ -465,6 +514,25 @@ async function main() {
     if (extractResult.code !== 0) {
       console.warn("\n  Warning: Extraction failed. Continuing with ingestion (existing data)...");
     }
+
+    // Marker file inspection — single source of truth for "did extraction actually finish?"
+    const completeMarker = readMarker(MARKER_COMPLETE);
+    const bbSkipMarker = readMarker(MARKER_BB_SKIP);
+
+    if (!completeMarker) {
+      // Subprocess didn't write the complete marker → it crashed somewhere
+      extractionCrashed = true;
+      console.warn("\n  Warning: Extraction did not write the complete marker — likely crashed mid-run.");
+    }
+    if (bbSkipMarker) {
+      browserbaseSkipped = bbSkipMarker;
+      console.warn(`\n  Warning: Browserbase was unavailable for ${bbSkipMarker.skippedUrls?.length || 0} article(s).`);
+    }
+
+    // Tidy up — orchestrator owns marker lifecycle
+    unlinkMarker(MARKER_STARTED);
+    unlinkMarker(MARKER_COMPLETE);
+    unlinkMarker(MARKER_BB_SKIP);
   }
 
   // ─── Step 3: Run ingestion ──────────────────────────────
@@ -532,6 +600,8 @@ async function main() {
     ingestResult,
     labFreshness,
     runDate,
+    extractionCrashed,
+    browserbaseSkipped,
   });
 
   console.log(`  Title: ${report.title}`);

@@ -9,3 +9,7 @@ scripts/prototype-*.mjs
 .pipeline-report-body.md
 .extraction-report-body.md
 supabase/.temp/
+
+# Pipeline marker files (live in os.tmpdir(), but defensive in case anyone misconfigures)
+ai-race-extraction-*.json
+ai-race-browserbase-skip.json
