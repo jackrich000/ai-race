@@ -11,7 +11,10 @@ const {
   computeCumulativeMin,
   generateMatchVerifiedRegex,
   findCol,
+  shouldRegenerateAnalyses,
 } = require("../lib/pipeline.js");
+
+const { compareQuarters } = require("../lib/config.js");
 
 // ─── normalizeOrg ────────────────────────────────────────────
 
@@ -370,5 +373,95 @@ describe("generateMatchVerifiedRegex", () => {
     const re = generateMatchVerifiedRegex("GPT-5.4 Pro");
     expect(re.test("Claude Sonnet 4.6")).toBe(false);
     expect(re.test("Gemini 3.1 Pro")).toBe(false);
+  });
+});
+
+// ─── shouldRegenerateAnalyses ───────────────────────────────
+
+describe("shouldRegenerateAnalyses", () => {
+  const presets = ["all-time", "last-12-months", "last-6-months", "last-3-months", "2024", "2025"];
+  const currentQuarter = "Q2 2026";
+  const freshNow = new Date("2026-04-30T12:00:00Z");
+
+  // A "fresh" cache: every preset present, all rolling presets at currentQuarter,
+  // generated_at recent. Year presets keep their fixed end_quarter.
+  const freshCache = [
+    { date_range: "all-time",        end_quarter: "Q2 2026", generated_at: "2026-04-29T12:00:00Z" },
+    { date_range: "last-12-months",  end_quarter: "Q2 2026", generated_at: "2026-04-29T12:00:00Z" },
+    { date_range: "last-6-months",   end_quarter: "Q2 2026", generated_at: "2026-04-29T12:00:00Z" },
+    { date_range: "last-3-months",   end_quarter: "Q2 2026", generated_at: "2026-04-29T12:00:00Z" },
+    { date_range: "2024",            end_quarter: "Q4 2024", generated_at: "2026-04-29T12:00:00Z" },
+    { date_range: "2025",            end_quarter: "Q4 2025", generated_at: "2026-04-29T12:00:00Z" },
+  ];
+
+  const baseInput = {
+    changeCount: 0,
+    costChangeCount: 0,
+    cachedRows: freshCache,
+    expectedPresets: presets,
+    currentQuarter,
+    compareQuarters,
+    now: freshNow,
+  };
+
+  it("regens when changeCount > 0", () => {
+    const r = shouldRegenerateAnalyses({ ...baseInput, changeCount: 3 });
+    expect(r.shouldRegen).toBe(true);
+    expect(r.reason).toContain("3 score change");
+  });
+
+  it("regens when costChangeCount > 0 only", () => {
+    const r = shouldRegenerateAnalyses({ ...baseInput, costChangeCount: 2 });
+    expect(r.shouldRegen).toBe(true);
+    expect(r.reason).toContain("2 cost change");
+    expect(r.reason).not.toContain("score");
+  });
+
+  it("regens with both change types and lists each", () => {
+    const r = shouldRegenerateAnalyses({ ...baseInput, changeCount: 1, costChangeCount: 4 });
+    expect(r.shouldRegen).toBe(true);
+    expect(r.reason).toContain("1 score change");
+    expect(r.reason).toContain("4 cost change");
+  });
+
+  it("regens when cache is empty (first run)", () => {
+    const r = shouldRegenerateAnalyses({ ...baseInput, cachedRows: [] });
+    expect(r.shouldRegen).toBe(true);
+    expect(r.reason).toMatch(/no cached analyses/);
+  });
+
+  it("regens when a preset has no cached row, naming the missing preset", () => {
+    const partial = freshCache.filter(r => r.date_range !== "2025");
+    const r = shouldRegenerateAnalyses({ ...baseInput, cachedRows: partial });
+    expect(r.shouldRegen).toBe(true);
+    expect(r.reason).toContain("2025");
+  });
+
+  it("regens when quarter has rolled over", () => {
+    const stale = freshCache.map(row =>
+      row.end_quarter === "Q2 2026" ? { ...row, end_quarter: "Q1 2026" } : row
+    );
+    const r = shouldRegenerateAnalyses({ ...baseInput, cachedRows: stale });
+    expect(r.shouldRegen).toBe(true);
+    expect(r.reason).toContain("rollover");
+    expect(r.reason).toContain("Q1 2026");
+    expect(r.reason).toContain("Q2 2026");
+  });
+
+  it("regens when oldest cached row exceeds maxAgeDays", () => {
+    const stale = freshCache.map(row =>
+      row.date_range === "all-time"
+        ? { ...row, generated_at: "2026-03-15T12:00:00Z" } // ~46 days before freshNow
+        : row
+    );
+    const r = shouldRegenerateAnalyses({ ...baseInput, cachedRows: stale, maxAgeDays: 30 });
+    expect(r.shouldRegen).toBe(true);
+    expect(r.reason).toMatch(/\d+d old/);
+  });
+
+  it("skips when nothing has changed and cache is fresh and complete", () => {
+    const r = shouldRegenerateAnalyses(baseInput);
+    expect(r.shouldRegen).toBe(false);
+    expect(r.reason).toMatch(/no score\/cost changes/);
   });
 });

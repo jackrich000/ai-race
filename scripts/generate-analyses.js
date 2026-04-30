@@ -30,7 +30,7 @@ const { createClient } = require("@supabase/supabase-js");
 const { SYSTEM_PROMPT } = require("../lib/analysis-prompt.js");
 const {
   LABS, LAB_KEYS, BENCHMARK_META, COST_BENCHMARK_META,
-  TIME_LABELS, compareQuarters, getFilterEndDate, isBenchmarkActive,
+  TIME_LABELS, compareQuarters, getFilterEndDate, isBenchmarkActive, getPresets,
 } = require("../lib/config.js");
 
 // ─── Config ──────────────────────────────────────────────────
@@ -421,21 +421,6 @@ function computeQuarterRange(preset) {
   }
 
   return { startIdx: 0, endIdx };
-}
-
-function getPresets() {
-  const presets = ["all-time", "last-12-months", "last-6-months", "last-3-months"];
-
-  const years = [...new Set(TIME_LABELS.map(q => q.substring(3)))];
-  for (const year of years) {
-    // Skip single-quarter years (e.g. 2026 with only Q1)
-    const quartersInYear = TIME_LABELS.filter(q => q.endsWith(year));
-    if (quartersInYear.length <= 1) continue;
-    if (parseInt(year) < 2024) continue;
-    presets.push(year);
-  }
-
-  return presets;
 }
 
 // ─── Build structured analysis JSON ──────────────────────────

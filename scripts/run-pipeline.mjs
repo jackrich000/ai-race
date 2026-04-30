@@ -15,7 +15,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const require = createRequire(import.meta.url);
-const { BENCHMARK_META, LABS, LAB_KEYS } = require("../lib/config.js");
+const { BENCHMARK_META, LABS, LAB_KEYS, TIME_LABELS, compareQuarters, getPresets } = require("../lib/config.js");
+const { shouldRegenerateAnalyses } = require("../lib/pipeline.js");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -78,6 +79,41 @@ async function snapshotBestScores(supabase) {
     }
   }
   return best;
+}
+
+/**
+ * Snapshot cost_intelligence rows. update-data.js delete+inserts this table
+ * each run, so we compare a normalized representation of every row to detect
+ * semantic changes (new cheapest model, price drop, new quarter).
+ * Returns Map of "benchmark|quarter" → "price|model|lab".
+ */
+async function snapshotCostIntelligence(supabase) {
+  const { data, error } = await supabase
+    .from("cost_intelligence")
+    .select("benchmark, quarter, price, model, lab");
+
+  if (error) throw new Error(`cost_intelligence snapshot failed: ${error.message}`);
+
+  const snap = new Map();
+  for (const row of data || []) {
+    snap.set(`${row.benchmark}|${row.quarter}`, `${row.price}|${row.model}|${row.lab}`);
+  }
+  return snap;
+}
+
+/**
+ * Count differences between two cost_intelligence snapshots.
+ * Counts changed values, new keys, and removed keys.
+ */
+function diffCostIntelligence(before, after) {
+  let count = 0;
+  for (const [k, v] of after) {
+    if (before.get(k) !== v) count++;
+  }
+  for (const [k] of before) {
+    if (!after.has(k)) count++;
+  }
+  return count;
 }
 
 /**
@@ -285,7 +321,7 @@ function sourceName(key) {
 /**
  * Build the combined GitHub issue report.
  */
-function buildReport({ changes, flagged, rejected, extractResult, ingestResult, labFreshness, runDate }) {
+function buildReport({ changes, flagged, rejected, extractResult, ingestResult, labFreshness, runDate, regen }) {
   const parts = [];
 
   // ─── Header ─────────────────────────────────────────────
@@ -296,6 +332,9 @@ function buildReport({ changes, flagged, rejected, extractResult, ingestResult, 
 
   parts.push(`## Pipeline Run (${runDate})`);
   parts.push(`Extraction: ${extractStatus} | Ingestion: ${ingestStatus}`);
+  if (regen) {
+    parts.push(`Analyses regeneration: ${regen.shouldRegen ? "queued" : "skipped"} — ${regen.reason}`);
+  }
   parts.push("");
 
   // ─── Needs Review ───────────────────────────────────────
@@ -445,7 +484,8 @@ async function main() {
   // ─── Step 1: Snapshot current best scores ───────────────
   console.log("\nStep 1: Snapshotting current best scores...");
   const beforeSnapshot = await snapshotBestScores(supabase);
-  console.log(`  Snapshot: ${beforeSnapshot.size} (benchmark, lab) pairs`);
+  const beforeCostSnapshot = await snapshotCostIntelligence(supabase);
+  console.log(`  Snapshot: ${beforeSnapshot.size} (benchmark, lab) pairs, ${beforeCostSnapshot.size} cost rows`);
 
   // ─── Step 2: Run extraction ─────────────────────────────
   let extractResult = null;
@@ -508,6 +548,38 @@ async function main() {
     }
   }
 
+  const afterCostSnapshot = await snapshotCostIntelligence(supabase);
+  const costChangeCount = diffCostIntelligence(beforeCostSnapshot, afterCostSnapshot);
+  console.log(`  ${costChangeCount} cost intelligence change${costChangeCount !== 1 ? "s" : ""} detected.`);
+
+  // ─── Step 5.5: Compute analyses-regen gate ──────────────
+  console.log("\nStep 5.5: Computing analyses-regen gate...");
+  const { data: cachedRows, error: cachedErr } = await supabase
+    .from("cached_analyses")
+    .select("date_range, end_quarter, generated_at");
+  if (cachedErr) {
+    console.warn(`  Warning: cached_analyses query failed (${cachedErr.message}). Defaulting to regen.`);
+  }
+  const regen = cachedErr
+    ? { shouldRegen: true, reason: `cached_analyses query error: ${cachedErr.message}` }
+    : shouldRegenerateAnalyses({
+        changeCount: changes.length,
+        costChangeCount,
+        cachedRows: cachedRows || [],
+        expectedPresets: getPresets(),
+        currentQuarter: TIME_LABELS[TIME_LABELS.length - 1],
+        compareQuarters,
+      });
+  console.log(`  Analyses regen: ${regen.shouldRegen ? "queued" : "skipped"} (${regen.reason})`);
+
+  if (process.env.GITHUB_OUTPUT) {
+    try {
+      fs.appendFileSync(process.env.GITHUB_OUTPUT, `should_regen_analyses=${regen.shouldRegen}\n`);
+    } catch (err) {
+      console.warn(`  Warning: failed to write GITHUB_OUTPUT (${err.message}).`);
+    }
+  }
+
   // ─── Step 6: Query flagged, rejected, and freshness ─────
   console.log("\nStep 6: Querying flagged, rejected, and lab freshness...");
   const flagged = await queryFlaggedItems(supabase, runStartTime);
@@ -532,6 +604,7 @@ async function main() {
     ingestResult,
     labFreshness,
     runDate,
+    regen,
   });
 
   console.log(`  Title: ${report.title}`);
