@@ -95,7 +95,7 @@ if (!ANTHROPIC_API_KEY) {
 
 // ─── Browser setup ───────────────────────────────────────────
 
-// Browser launching lives in lib/browser.js. Per-lab dispatch happens via the
+// Browser launching lives in lib/browser.mjs. Per-lab dispatch happens via the
 // BrowserPool below. Each article looks up its source's `useBrowserbase` flag
 // and pulls a browser of the right kind from the pool.
 
