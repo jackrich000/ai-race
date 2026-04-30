@@ -329,6 +329,19 @@ describe("computeCumulativeBest", () => {
     expect(result["Q3 2024"].variant).toBe("with tools"); // carried forward
   });
 
+  it("two unverified ties are deterministic regardless of input order", () => {
+    // Same date, same score, same lab+benchmark — input order from Postgres is unspecified.
+    // Must produce the same winner either way (alphabetical model fallback).
+    const points1 = [
+      { date: new Date("2024-01-15"), score: 60, model: "Beta",  source: "model_card", verified: false, variant: null },
+      { date: new Date("2024-01-15"), score: 60, model: "Alpha", source: "model_card", verified: false, variant: "with tools" },
+    ];
+    const points2 = [...points1].reverse();
+    const r1 = computeCumulativeBest(points1, quarters);
+    const r2 = computeCumulativeBest(points2, quarters);
+    expect(r1["Q1 2024"]).toEqual(r2["Q1 2024"]);
+  });
+
   it("verified wins ties (deterministic across runs)", () => {
     const points = [
       // unverified arrives first by date

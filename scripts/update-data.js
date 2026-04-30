@@ -122,12 +122,14 @@ const MODEL_CARD_DATA = [
 // ─── Source 7: SWE-bench Pro seed data (Scale AI SEAL leaderboard) ────
 // Manually curated from https://scale.com/leaderboard — SWE-Bench Pro (Public Dataset).
 // No automated source exists for this benchmark yet; new scores arrive via model card extraction.
+// `variant: null` is explicit so future edits remember to use a separate field rather than baking
+// "(with tools)"-style suffixes into the model string (which would bypass splitVariantFromModel).
 const SWEBENCH_PRO_SEED = [
-  { benchmark: "swe-bench-pro", lab: "anthropic", model: "Claude 4.5 Sonnet", score: 43.6, date: quarterMidDate("Q3 2025"), source: "manual", verified: true },
-  { benchmark: "swe-bench-pro", lab: "anthropic", model: "Claude Opus 4.5", score: 45.9, date: quarterMidDate("Q4 2025"), source: "manual", verified: true },
-  { benchmark: "swe-bench-pro", lab: "google", model: "Gemini 3 Pro", score: 43.3, date: quarterMidDate("Q4 2025"), source: "manual", verified: true },
-  { benchmark: "swe-bench-pro", lab: "openai", model: "GPT-5", score: 41.8, date: quarterMidDate("Q4 2025"), source: "manual", verified: true },
-  { benchmark: "swe-bench-pro", lab: "openai", model: "GPT-5.4", score: 57.7, date: new Date("2026-03-05"), source: "model_card", verified: false },
+  { benchmark: "swe-bench-pro", lab: "anthropic", model: "Claude 4.5 Sonnet", variant: null, score: 43.6, date: quarterMidDate("Q3 2025"), source: "manual", verified: true },
+  { benchmark: "swe-bench-pro", lab: "anthropic", model: "Claude Opus 4.5", variant: null, score: 45.9, date: quarterMidDate("Q4 2025"), source: "manual", verified: true },
+  { benchmark: "swe-bench-pro", lab: "google", model: "Gemini 3 Pro", variant: null, score: 43.3, date: quarterMidDate("Q4 2025"), source: "manual", verified: true },
+  { benchmark: "swe-bench-pro", lab: "openai", model: "GPT-5", variant: null, score: 41.8, date: quarterMidDate("Q4 2025"), source: "manual", verified: true },
+  { benchmark: "swe-bench-pro", lab: "openai", model: "GPT-5.4", variant: null, score: 57.7, date: new Date("2026-03-05"), source: "model_card", verified: false },
 ];
 
 // ─── Source 8: Model cards from Supabase (DB-driven path) ────
