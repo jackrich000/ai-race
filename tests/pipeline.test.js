@@ -473,6 +473,20 @@ describe("normalizeVariant", () => {
     expect(normalizeVariant("   ")).toBeNull();
   });
 
+  it("returns null for non-string inputs (objects, arrays, numbers)", () => {
+    expect(normalizeVariant({ foo: "bar" })).toBeNull();
+    expect(normalizeVariant(["a", "b"])).toBeNull();
+    expect(normalizeVariant(42)).toBeNull();
+    expect(normalizeVariant(true)).toBeNull();
+  });
+
+  it("returns null for string-literal nullish values", () => {
+    expect(normalizeVariant("null")).toBeNull();
+    expect(normalizeVariant("Null")).toBeNull();
+    expect(normalizeVariant("undefined")).toBeNull();
+    expect(normalizeVariant("None")).toBeNull();
+  });
+
   it("treats explicit no-tools strings as standard (null)", () => {
     expect(normalizeVariant("no tools")).toBeNull();
     expect(normalizeVariant("No Tools")).toBeNull();
@@ -517,12 +531,20 @@ describe("isHarnessVariant", () => {
       "tool use", "code interpreter", "function calling",
       "agent", "agentic", "agent mode", "agent harness", "agent scaffold",
       "scaffold", "scaffolding", "browsing", "browsing enabled", "internet access",
+      // Bare nouns and compound forms seen in real extraction
+      "python", "search", "browser", "code execution",
     ];
     for (const v of positives) {
       expect(isHarnessVariant(v), `expected ${JSON.stringify(v)} to be harness`).toBe(true);
     }
     // Sanity check: HARNESS_KEYWORDS list isn't empty (catches accidental deletion)
     expect(HARNESS_KEYWORDS.length).toBeGreaterThan(5);
+  });
+
+  it("matches real-world plus-separated tool lists", () => {
+    expect(isHarnessVariant("Python + Search")).toBe(true);
+    expect(isHarnessVariant("Search + code execution")).toBe(true);
+    expect(isHarnessVariant("Search (blocklist) + Code")).toBe(true);
   });
 
   it("returns false for config knobs and unknown strings", () => {
