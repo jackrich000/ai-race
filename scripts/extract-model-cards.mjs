@@ -3,15 +3,20 @@
 // Scans lab blog indexes for new model announcements, extracts benchmark scores
 // via Playwright DOM + image download + Claude Vision/Text, stores in benchmark_raw.
 //
+// Browser backend is per-lab: sources with `useBrowserbase: true` in lab-sources.js
+// use Browserbase (cloud browser, residential IPs — bypasses anti-bot like OpenAI's).
+// All other sources use local headless Playwright.
+//
 // Usage:
 //   node scripts/extract-model-cards.mjs                         # Full run
 //   node scripts/extract-model-cards.mjs --dry-run               # Preview without DB writes
 //   node scripts/extract-model-cards.mjs --lab anthropic         # Single lab only
 //   node scripts/extract-model-cards.mjs --force                 # Re-extract already-processed URLs
 //   node scripts/extract-model-cards.mjs --url <url> --model <name> --lab <name>  # Single article
-//   node scripts/extract-model-cards.mjs --local                 # Use local Playwright instead of Browserbase
+//   node scripts/extract-model-cards.mjs --local                 # Force local Playwright for ALL sources (debug)
 
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
@@ -50,14 +55,13 @@ const {
 
 // ESM imports
 import Anthropic from "@anthropic-ai/sdk";
+import { BrowserPool } from "../lib/browser.mjs";
 
 // ─── Config ──────────────────────────────────────────────────
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://jtrhsqdfevyqzzjjvcdr.supabase.co";
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const BROWSERBASE_API_KEY = process.env.BROWSERBASE_API_KEY;
-const BROWSERBASE_PROJECT_ID = process.env.BROWSERBASE_PROJECT_ID;
 
 // CLI flags
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -91,56 +95,43 @@ if (!ANTHROPIC_API_KEY) {
 
 // ─── Browser setup ───────────────────────────────────────────
 
+// Browser launching lives in lib/browser.mjs. Per-lab dispatch happens via the
+// BrowserPool below. Each article looks up its source's `useBrowserbase` flag
+// and pulls a browser of the right kind from the pool.
+
 /**
- * Launch browser via Browserbase (default) or local Playwright (--local flag).
- * Browserbase matches the validated prototype approach: cloud browser that
- * bypasses anti-bot protections, returns a standard Playwright Page object.
- * All DOM extraction code works identically regardless of browser backend.
+ * Pick the BrowserPool kind for a source.
+ * `--local` CLI flag overrides everything (debug escape hatch).
  */
-async function launchBrowser() {
-  const { chromium } = await import("playwright");
+function browserKindFor(source) {
+  if (LOCAL_BROWSER) return "local";
+  return source && source.useBrowserbase === true ? "browserbase" : "local";
+}
 
-  // Browserbase: cloud browser (validated prototype approach)
-  if (!LOCAL_BROWSER && BROWSERBASE_API_KEY && BROWSERBASE_PROJECT_ID) {
-    console.log("  Using Browserbase (cloud browser)...");
+// ─── Marker files ────────────────────────────────────────────
+// Inter-process signals to scripts/run-pipeline.mjs:
+//   .extraction-started.json    written immediately on start
+//   .extraction-complete.json   written on clean exit (missing → subprocess crashed)
+//   .browserbase-skip.json      written if Browserbase was unavailable for any article
+//
+// All live in os.tmpdir(); the orchestrator reads them after the subprocess returns
+// and unlinks them (with safety unlinks at start of every run too).
 
-    // Create a session via Browserbase REST API
-    const sessionResp = await fetch("https://api.browserbase.com/v1/sessions", {
-      method: "POST",
-      headers: {
-        "x-bb-api-key": BROWSERBASE_API_KEY,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ projectId: BROWSERBASE_PROJECT_ID }),
-    });
-    if (!sessionResp.ok) {
-      throw new Error(`Browserbase session creation failed: ${sessionResp.status} ${await sessionResp.text()}`);
-    }
-    const { id: sessionId } = await sessionResp.json();
+const MARKER_DIR = os.tmpdir();
+const MARKER_STARTED = path.join(MARKER_DIR, "ai-race-extraction-started.json");
+const MARKER_COMPLETE = path.join(MARKER_DIR, "ai-race-extraction-complete.json");
+const MARKER_BB_SKIP = path.join(MARKER_DIR, "ai-race-browserbase-skip.json");
 
-    // Connect via Chrome DevTools Protocol (gives us a standard Playwright Page)
-    const wsUrl = `wss://connect.browserbase.com?apiKey=${BROWSERBASE_API_KEY}&sessionId=${sessionId}`;
-    const browser = await chromium.connectOverCDP(wsUrl);
-    const context = browser.contexts()[0];
-    const page = context.pages()[0] || await context.newPage();
-    return { browser, context, page };
+function writeMarker(filePath, payload) {
+  try {
+    fs.writeFileSync(filePath, JSON.stringify({ ...payload, ts: new Date().toISOString() }, null, 2));
+  } catch (err) {
+    console.warn(`   Warning: could not write marker ${filePath}: ${err.message}`);
   }
+}
 
-  // Local Playwright fallback (for development/testing)
-  console.log("  Using local Playwright (headless)...");
-  if (!BROWSERBASE_API_KEY) {
-    console.warn("  Warning: No BROWSERBASE_API_KEY set. Some sites may block headless browsers.");
-  }
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--disable-blink-features=AutomationControlled"],
-  });
-  const context = await browser.newContext({
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    viewport: { width: 1280, height: 720 },
-  });
-  const page = await context.newPage();
-  return { browser, context, page };
+function unlinkMarker(filePath) {
+  try { fs.unlinkSync(filePath); } catch { /* not present, fine */ }
 }
 
 // ─── RSS/Feed-based discovery ────────────────────────────────
@@ -609,8 +600,20 @@ async function main() {
   if (SINGLE_URL) console.log(`  Single URL: ${SINGLE_URL}`);
   console.log(`${"=".repeat(60)}\n`);
 
+  // Marker files: clear stale ones from a prior run, then mark "started".
+  unlinkMarker(MARKER_STARTED);
+  unlinkMarker(MARKER_COMPLETE);
+  unlinkMarker(MARKER_BB_SKIP);
+  writeMarker(MARKER_STARTED, { pid: process.pid, dryRun: DRY_RUN });
+
   const supabase = DRY_RUN ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
   const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+
+  // Single browser pool for the whole run. Per-article dispatch picks
+  // local vs Browserbase from each source's `useBrowserbase` flag.
+  const pool = new BrowserPool();
+  const browserbaseSkipped = []; // { url, reason } — populated if Browserbase is unavailable
+  let browserbaseUnavailable = false;
 
   // Get last extraction date + processed URLs from DB
   let lastExtractionDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -720,44 +723,70 @@ async function main() {
 
     // Discover from browser-based sources
     if (browserSources.length > 0) {
-      console.log("\nLaunching scanning browser...");
-      const { browser: scanBrowser, page: scanPage } = await launchBrowser();
+      console.log("\nScanning browser-based sources...");
 
-      try {
-        for (const source of browserSources) {
-          try {
-            const articles = source.scanMethod === "qwenCards"
-              ? await scanQwenCards(scanPage, source)
-              : await scanBlogIndex(scanPage, source);
-            if (articles.length === 0) continue;
-
-            const classifications = await classifyArticles(anthropic, articles);
-
-            for (const cls of classifications) {
-              if (!cls.is_model_release) continue;
-              const article = articles[cls.index];
-              if (!article) continue;
-
-              if (processedUrls.has(article.url)) {
-                console.log(`   Skipping (already processed): ${article.title}`);
-                continue;
-              }
-
-              newArticles.push({
-                source,
-                title: article.title,
-                url: article.url,
-                modelName: cls.model_name || article.title,
-              });
-              console.log(`   NEW: "${article.title}" -> ${cls.model_name || "unknown model"}`);
-            }
-          } catch (err) {
-            console.warn(`   Error scanning ${source.name}: ${err.message.substring(0, 150)}`);
+      for (const source of browserSources) {
+        const kind = browserKindFor(source);
+        let browser;
+        try {
+          browser = await pool.getBrowser(kind);
+        } catch (err) {
+          if (kind === "browserbase") {
+            console.warn(`   Browserbase unavailable for ${source.name}: ${err.message.substring(0, 150)}`);
+            browserbaseUnavailable = true;
+            // Can't scan this source; record but continue with other sources
+            continue;
           }
+          throw err;
         }
-      } finally {
-        await scanBrowser.close();
-        console.log("Scanning browser closed.\n");
+
+        let scanCtx;
+        try {
+          scanCtx = await browser.newContext({
+            userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            viewport: { width: 1280, height: 720 },
+          });
+        } catch (err) {
+          console.warn(`   Could not create context for ${source.name}: ${err.message.substring(0, 150)}`);
+          if (kind === "browserbase") browserbaseUnavailable = true;
+          continue;
+        }
+
+        const scanPage = await scanCtx.newPage();
+        try {
+          const articles = source.scanMethod === "qwenCards"
+            ? await scanQwenCards(scanPage, source)
+            : await scanBlogIndex(scanPage, source);
+          if (articles.length === 0) {
+            await scanCtx.close();
+            continue;
+          }
+
+          const classifications = await classifyArticles(anthropic, articles);
+
+          for (const cls of classifications) {
+            if (!cls.is_model_release) continue;
+            const article = articles[cls.index];
+            if (!article) continue;
+
+            if (processedUrls.has(article.url)) {
+              console.log(`   Skipping (already processed): ${article.title}`);
+              continue;
+            }
+
+            newArticles.push({
+              source,
+              title: article.title,
+              url: article.url,
+              modelName: cls.model_name || article.title,
+            });
+            console.log(`   NEW: "${article.title}" -> ${cls.model_name || "unknown model"}`);
+          }
+        } catch (err) {
+          console.warn(`   Error scanning ${source.name}: ${err.message.substring(0, 150)}`);
+        } finally {
+          try { await scanCtx.close(); } catch { /* ignore */ }
+        }
       }
     }
   }
@@ -766,28 +795,63 @@ async function main() {
 
   if (newArticles.length === 0) {
     console.log("No new articles to process. Done.");
+    await pool.closeAll();
+    writeMarker(MARKER_COMPLETE, {
+      articlesProcessed: 0,
+      scoresExtracted: 0,
+      browserbaseSkipped: 0,
+      browserbaseUnavailable,
+    });
     return;
   }
 
   // ─── Step 2: Extract scores from articles ──────────────────
-  // Use a fresh browser for extraction — separate from the scanning browser.
-  // This ensures no anti-bot state from blog index scanning carries over.
+  // Per-article dispatch via BrowserPool: sources with `useBrowserbase: true`
+  // (currently OpenAI) get the cloud browser; everything else gets local headless.
+  // Browserbase availability errors are isolated per article — other labs ingest normally.
 
-  console.log("Launching extraction browser...");
-  const { browser: extractBrowser } = await launchBrowser();
+  console.log("Step 2: Extracting scores from articles...\n");
 
   try {
-    console.log("Step 2: Extracting scores from articles...\n");
-
     for (const article of newArticles) {
-      // Fresh browser context per article: prevents cookie/session state from
-      // triggering anti-bot protection on subsequent page loads (OpenAI, xAI).
-      const ctx = await extractBrowser.newContext({
-        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        viewport: { width: 1280, height: 720 },
-      });
-      const articlePage = await ctx.newPage();
+      const kind = browserKindFor(article.source);
 
+      // Acquire browser of the right kind. Browserbase failure → skip + mark.
+      let browser;
+      try {
+        browser = await pool.getBrowser(kind);
+      } catch (err) {
+        if (kind === "browserbase") {
+          console.error(`   Browserbase unavailable for "${article.title}": ${err.message.substring(0, 150)}`);
+          browserbaseUnavailable = true;
+          browserbaseSkipped.push({ url: article.url, reason: err.message.substring(0, 200) });
+          allExtracted.push({ article, scores: [], publishDate: null, browserbaseSkipped: true });
+          continue;
+        }
+        throw err;
+      }
+
+      // Fresh context per article: avoids cookie/session contamination across articles.
+      let ctx;
+      try {
+        ctx = await browser.newContext({
+          userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          viewport: { width: 1280, height: 720 },
+        });
+      } catch (err) {
+        // Mid-loop browser API rejection (e.g. Browserbase quota tipped over,
+        // session disconnected since pool's isConnected check, key rotated).
+        if (kind === "browserbase") {
+          console.error(`   Browserbase newContext failed for "${article.title}": ${err.message.substring(0, 150)}`);
+          browserbaseUnavailable = true;
+          browserbaseSkipped.push({ url: article.url, reason: err.message.substring(0, 200) });
+          allExtracted.push({ article, scores: [], publishDate: null, browserbaseSkipped: true });
+          continue;
+        }
+        throw err;
+      }
+
+      const articlePage = await ctx.newPage();
       try {
         const cutoff = FORCE ? null : lastExtractionDate;
         const { scores, publishDate, skippedOld } = await extractFromArticle(
@@ -798,12 +862,20 @@ async function main() {
         console.error(`   FAILED: ${article.title}: ${err.message.substring(0, 200)}`);
         allExtracted.push({ article, scores: [], publishDate: null });
       } finally {
-        await ctx.close();
+        try { await ctx.close(); } catch { /* ignore */ }
       }
     }
   } finally {
-    await extractBrowser.close();
-    console.log("\nExtraction browser closed.\n");
+    await pool.closeAll();
+    console.log("\nExtraction browser pool closed.\n");
+  }
+
+  if (browserbaseSkipped.length > 0) {
+    writeMarker(MARKER_BB_SKIP, {
+      reason: "Browserbase unavailable during extraction",
+      skippedUrls: browserbaseSkipped,
+    });
+    console.warn(`   ${browserbaseSkipped.length} article(s) skipped due to Browserbase unavailability — see ${MARKER_BB_SKIP}`);
   }
 
   // Log date filtering summary
@@ -1140,9 +1212,19 @@ async function main() {
     console.log("\n  DRY RUN: No data was written to Supabase.");
   }
   console.log("");
+
+  // Marker for the orchestrator: clean exit. Absence of this file = subprocess crashed.
+  writeMarker(MARKER_COMPLETE, {
+    articlesProcessed: allExtracted.length,
+    scoresExtracted: rawRows.length,
+    browserbaseSkipped: browserbaseSkipped.length,
+    browserbaseUnavailable,
+  });
 }
 
 main().catch(err => {
   console.error("Fatal error:", err);
+  // Intentionally do NOT write the complete marker — orchestrator interprets
+  // its absence as "extraction crashed" and posts an alert.
   process.exit(1);
 });
