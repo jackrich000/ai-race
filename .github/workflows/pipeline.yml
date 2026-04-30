@@ -4,7 +4,12 @@ on:
   schedule:
     # Thursday 11 PM UTC (Thursday evening US time)
     - cron: '0 23 * * 4'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force_regen_analyses:
+        description: "Force analyses regeneration even if no changes (for prompt/model changes)"
+        type: boolean
+        default: false
 
 permissions:
   issues: write
@@ -44,7 +49,7 @@ jobs:
 
       - name: Regenerate analyses
         id: analyses
-        if: success()
+        if: success() && (steps.pipeline.outputs.should_regen_analyses == 'true' || github.event.inputs.force_regen_analyses == 'true')
         env:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
