@@ -319,14 +319,14 @@ function buildReport({ changes, flagged, rejected, extractResult, ingestResult, 
 
   // ─── Extraction issues (crash or Browserbase unavailability) ─
   if (extractionCrashed) {
-    parts.push("## ⚠ Extraction Crashed");
+    parts.push("## Extraction Crashed");
     parts.push("The extraction subprocess exited without writing a completion marker. ");
     parts.push("This usually means a fatal error mid-run (browser crash, OOM, network hang). ");
     parts.push("Check the Actions log for the stack trace.");
     parts.push("");
   }
   if (browserbaseSkipped && browserbaseSkipped.skippedUrls?.length > 0) {
-    parts.push("## ⚠ Browserbase Unavailable");
+    parts.push("## Browserbase Unavailable");
     parts.push(`Skipped extraction for ${browserbaseSkipped.skippedUrls.length} article(s) flagged as \`useBrowserbase\` (currently OpenAI). `);
     parts.push("Other labs ingested normally. Causes: quota exhausted, API outage, key rotation.");
     parts.push("");
