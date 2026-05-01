@@ -216,6 +216,7 @@ async function downloadImage(url) {
     const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (!resp.ok) return null;
     const buf = Buffer.from(await resp.arrayBuffer());
+    if (buf.length < 5000) return null;
     const contentType = resp.headers.get("content-type") || "image/png";
     return { base64: buf.toString("base64"), mediaType: contentType.split(";")[0] };
   } catch { return null; }
@@ -269,7 +270,7 @@ async function validateOne(browser, anthropic, gt) {
           modelName: gt.model,
         });
         visionScores.push(...scores);
-      } catch (err) { console.warn(`    Image extraction failed: ${err.message.substring(0, 80)}`); }
+      } catch (err) { console.warn(`    Image extraction failed: ${err.message}`); }
     }
 
     let textScores = [];
@@ -279,7 +280,7 @@ async function validateOne(browser, anthropic, gt) {
           textContent: textBlock,
           modelName: gt.model,
         });
-      } catch (err) { console.warn(`    Text extraction failed: ${err.message.substring(0, 80)}`); }
+      } catch (err) { console.warn(`    Text extraction failed: ${err.message}`); }
     }
 
     const allScores = deduplicateScores(visionScores, textScores);

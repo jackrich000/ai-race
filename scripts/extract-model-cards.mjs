@@ -379,6 +379,10 @@ async function extractPageContent(page, url) {
     let node = walker.nextNode();
 
     while (node) {
+      if (!node.tagName) {
+        node = walker.nextNode();
+        continue;
+      }
       const tag = node.tagName.toLowerCase();
 
       if (/^h[1-6]$/.test(tag)) {
