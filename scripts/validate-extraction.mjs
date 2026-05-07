@@ -26,8 +26,13 @@ import { fileURLToPath } from "url";
 import { BrowserPool } from "../lib/browser.mjs";
 
 const require = createRequire(import.meta.url);
-const { filterContentImages, buildTextBlock, deduplicateScores } = require("../lib/extraction.js");
-const { extractScoresFromText, extractScoresFromImage } = require("../lib/llm-extract.js");
+const {
+  filterContentImages, buildTextBlock, deduplicateScores, parseHfReadmeImages,
+} = require("../lib/extraction.js");
+const {
+  extractScoresFromText, extractScoresFromImage, extractScoresFromHfMarkdown,
+  columnHeaderGuard,
+} = require("../lib/llm-extract.js");
 const { LAB_SOURCES } = require("../lib/lab-sources.js");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -109,24 +114,89 @@ const GROUND_TRUTHS = [
       { benchmark: /mmmlu/i, score: 88.9 },
     ],
   },
+  // ── Hugging Face API path (no browser) ──────────────────────────
+  // `revision: "main"` follows the lab's latest README. If a lab edits scores
+  // post-launch, this validation will start failing — which is the signal we
+  // want (production also reads the latest sha, so divergence between GT and
+  // production is itself a regression of interest). To pin a specific commit
+  // (e.g. while debugging a known-good GT), replace `"main"` with the sha
+  // returned by `GET /api/models/<id>`.
   {
     lab: "chinese",
-    labName: "DeepSeek",
-    url: "https://huggingface.co/deepseek-ai/DeepSeek-V3.2-Exp",
-    model: "DeepSeek-V3.2-Exp",
-    minSections: 5,
-    minExpectedScoreCount: 8,
+    slug: "deepseek",
+    labName: "DeepSeek (HF)",
+    kind: "hf-api",
+    hfModelId: "deepseek-ai/DeepSeek-V4-Pro",
+    revision: "main",
+    model: "DeepSeek-V4-Pro",
+    minExpectedScoreCount: 5,
     expectedScores: [
-      { benchmark: /gpqa.?diamond/i, score: 79.9 },
-      { benchmark: /humanity.*last.*exam|hle/i, score: 19.8 },
-      { benchmark: /mmlu.?pro/i, score: 85.0 },
+      { benchmark: /gpqa.?diamond/i, score: 90.1 },
+      { benchmark: /hle|humanity.*last.*exam/i, score: 37.7 },
+      { benchmark: /mmlu.?pro/i, score: 87.5 },
+    ],
+  },
+  {
+    lab: "chinese",
+    slug: "kimi",
+    labName: "Kimi (HF)",
+    kind: "hf-api",
+    hfModelId: "moonshotai/Kimi-K2.6",
+    revision: "main",
+    model: "Kimi-K2.6",
+    minExpectedScoreCount: 3,
+    expectedScores: [
+      { benchmark: /swe.?bench pro/i, score: 58.6 },
+      { benchmark: /swe.?bench verified/i, score: 80.2 },
+      { benchmark: /gpqa/i, score: 90.5 },
+    ],
+  },
+  {
+    lab: "chinese",
+    slug: "minimax",
+    labName: "MiniMax (HF)",
+    kind: "hf-api",
+    hfModelId: "MiniMaxAI/MiniMax-M2.7",
+    revision: "main",
+    model: "MiniMax-M2.7",
+    // M2.7's README uses non-standard benchmark names (e.g. "SWE-Pro" not
+    // "SWE-bench Pro"), so most scores land in untracked. Smoke-test only:
+    // confirm at least one prose-style score was extracted.
+    minExpectedScoreCount: 5,
+    expectedScores: [
+      { benchmark: /swe.?pro|swe.?bench/i, score: 56.22 },
+    ],
+  },
+  {
+    lab: "chinese",
+    slug: "zhipu",
+    labName: "Zhipu (HF)",
+    kind: "hf-api",
+    hfModelId: "zai-org/GLM-5.1",
+    revision: "main",
+    model: "GLM-5.1",
+    minExpectedScoreCount: 4,
+    expectedScores: [
+      { benchmark: /hle|humanity.*last.*exam/i, score: 31 },
+      { benchmark: /gpqa/i, score: 86.2 },
+      { benchmark: /swe.?bench pro/i, score: 58.4 },
     ],
   },
 ];
 
-// Look up the source's `useBrowserbase` flag so validation matches production.
-function browserKindForLab(lab) {
-  const source = LAB_SOURCES.find(s => s.lab === lab);
+// Determine the discovery/extraction kind for a ground truth.
+// HF API GTs explicitly set `kind: "hf-api"`. For browser-based GTs, we look
+// up the source's `useBrowserbase` flag so validation matches production.
+//
+// Note: `chinese` maps to multiple sources (4 HF + Qwen). For browser-based
+// chinese GTs (Qwen), we look up by slug. For HF-API GTs, the `kind` field
+// dispatches before browserKindForGt is consulted.
+function browserKindForGt(gt) {
+  if (gt.kind === "hf-api") return "hf-api";
+  // Prefer slug lookup when present (disambiguates multi-source labs like chinese).
+  const source = gt.slug
+    ? LAB_SOURCES.find(s => s.slug === gt.slug)
+    : LAB_SOURCES.find(s => s.lab === gt.lab && !s.scanMethod);
   return source?.useBrowserbase === true ? "browserbase" : "local";
 }
 
@@ -347,6 +417,133 @@ async function validateOne(browser, anthropic, gt) {
   }
 }
 
+// ─── HF API validation (no browser) ─────────────────────────
+// Mirrors scripts/extract-model-cards.mjs#extractFromHfReadme but without
+// DB writes or report generation. Uses the GT's pinned revision sha so the
+// scores remain stable; production uses the latest sha at runtime.
+
+const HF_USER_AGENT = "ai-race-pipeline/1.0 (+https://ai-race.vercel.app)";
+
+async function validateOneHfApi(anthropic, gt) {
+  const revision = gt.revision || "main";
+  const readmeUrl = `https://huggingface.co/${gt.hfModelId}/raw/${revision}/README.md`;
+
+  let markdown;
+  try {
+    const resp = await fetch(readmeUrl, {
+      headers: { "User-Agent": HF_USER_AGENT },
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!resp.ok) {
+      return {
+        lab: gt.labName,
+        renderOk: false,
+        passed: false,
+        message: `README fetch ${resp.status} ${resp.statusText} for ${gt.hfModelId}@${revision}`,
+      };
+    }
+    markdown = await resp.text();
+  } catch (err) {
+    return {
+      lab: gt.labName,
+      renderOk: false,
+      passed: false,
+      message: `README fetch error: ${err.message.substring(0, 200)}`,
+    };
+  }
+
+  if (!markdown || markdown.trim().length < 100) {
+    return {
+      lab: gt.labName,
+      renderOk: false,
+      passed: false,
+      message: `README too short (${markdown?.length || 0} chars)`,
+    };
+  }
+
+  if (QUICK_MODE) {
+    return {
+      lab: gt.labName,
+      renderOk: true,
+      passed: true,
+      message: `README fetched (${markdown.length} chars, quick mode skipped LLM)`,
+    };
+  }
+
+  // Image-following: parse + download + vision (cap to 5 like production)
+  const imageUrls = parseHfReadmeImages(markdown, gt.hfModelId, revision).slice(0, 5);
+  const visionScores = [];
+  for (const imgUrl of imageUrls) {
+    const downloaded = await downloadImage(imgUrl);
+    if (!downloaded) continue;
+    try {
+      const scores = await extractScoresFromImage(anthropic, {
+        base64Data: downloaded.base64,
+        mediaType: downloaded.mediaType,
+        modelName: gt.model,
+      });
+      visionScores.push(...scores);
+    } catch (err) { console.warn(`    Image extraction failed: ${err.message.substring(0, 100)}`); }
+  }
+
+  // Markdown text extraction with column-header guard
+  let textScores = [];
+  try {
+    const raw = await extractScoresFromHfMarkdown(anthropic, { markdown, modelName: gt.model });
+    const guarded = columnHeaderGuard(raw, gt.model);
+    textScores = guarded.kept;
+  } catch (err) { console.warn(`    Markdown extraction failed: ${err.message.substring(0, 100)}`); }
+
+  const allScores = deduplicateScores(visionScores, textScores);
+
+  if (allScores.length === 0) {
+    return {
+      lab: gt.labName,
+      renderOk: true,
+      passed: false,
+      totalExtracted: 0,
+      message: `README fetched (${markdown.length} chars) but extraction yielded ZERO scores. Likely LLM prompt regression or column-guard over-aggression.`,
+    };
+  }
+
+  if (gt.minExpectedScoreCount && allScores.length < gt.minExpectedScoreCount) {
+    return {
+      lab: gt.labName,
+      renderOk: true,
+      passed: false,
+      totalExtracted: allScores.length,
+      message: `Only ${allScores.length} scores extracted (expected ≥${gt.minExpectedScoreCount}).`,
+    };
+  }
+
+  // GT score sample matching: tolerate `score: null` entries (smoke-only — pattern must match SOMETHING)
+  const found = [];
+  const missing = [];
+  for (const expected of gt.expectedScores) {
+    const match = allScores.find(s => {
+      const combined = `${s.benchmark} ${s.model_variant || ""}`;
+      const benchMatch = expected.benchmark.test(s.benchmark) || expected.benchmark.test(combined);
+      const scoreMatch = expected.score == null || Math.abs(s.score - expected.score) < 0.5;
+      return benchMatch && scoreMatch;
+    });
+    if (match) found.push({ expected: expected.score, got: match.score, benchmark: match.benchmark });
+    else missing.push({ score: expected.score, pattern: expected.benchmark.source });
+  }
+
+  return {
+    lab: gt.labName,
+    renderOk: true,
+    passed: missing.length === 0,
+    totalExtracted: allScores.length,
+    found: found.length,
+    missing: missing.length,
+    missingDetails: missing,
+    message: missing.length === 0
+      ? `${found.length}/${gt.expectedScores.length} GT scores found (${allScores.length} total)`
+      : `${found.length}/${gt.expectedScores.length} found, MISSING: ${missing.map(m => `${m.pattern}=${m.score ?? "*"}`).join(", ")}`,
+  };
+}
+
 // ─── Pass 3: fresh-article canary ────────────────────────────
 // Defends against ground truths fossilizing. Fetches OpenAI's RSS feed,
 // picks the newest article matching the article path pattern, opens it via
@@ -478,14 +675,26 @@ async function main() {
 
   const pool = new BrowserPool();
 
-  // Group ground truths by browser kind.
-  const localGts = GROUND_TRUTHS.filter(gt => browserKindForLab(gt.lab) === "local");
-  const bbGts = GROUND_TRUTHS.filter(gt => browserKindForLab(gt.lab) === "browserbase");
+  // Group ground truths by validation kind.
+  const localGts = GROUND_TRUTHS.filter(gt => browserKindForGt(gt) === "local");
+  const bbGts = GROUND_TRUTHS.filter(gt => browserKindForGt(gt) === "browserbase");
+  const hfApiGts = GROUND_TRUTHS.filter(gt => browserKindForGt(gt) === "hf-api");
 
   let allResults = [];
   try {
     allResults = allResults.concat(await runPassForKind(pool, anthropic, "local", localGts));
     allResults = allResults.concat(await runPassForKind(pool, anthropic, "browserbase", bbGts));
+
+    // HF API pass: no browser pool, parallel-ish per GT (each is just HTTP + LLM).
+    if (hfApiGts.length > 0) {
+      console.log(`\nPass: hf-api (${hfApiGts.length} ground truth${hfApiGts.length === 1 ? "" : "s"})`);
+      for (const gt of hfApiGts) {
+        process.stdout.write(`  ${gt.labName}... `);
+        const result = await validateOneHfApi(anthropic, gt);
+        allResults.push(result);
+        console.log(result.message);
+      }
+    }
 
     // Pass 3: fresh-article canary (only if we have a Browserbase-flagged source).
     if (bbGts.length > 0) {
