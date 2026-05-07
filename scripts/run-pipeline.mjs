@@ -57,6 +57,7 @@ const MARKER_DIR = os.tmpdir();
 const MARKER_STARTED = path.join(MARKER_DIR, "ai-race-extraction-started.json");
 const MARKER_COMPLETE = path.join(MARKER_DIR, "ai-race-extraction-complete.json");
 const MARKER_BB_SKIP = path.join(MARKER_DIR, "ai-race-browserbase-skip.json");
+const MARKER_HF_DISCOVERY_FAIL = path.join(MARKER_DIR, "ai-race-hf-discovery-fail.json");
 
 function readMarker(filePath) {
   try { return JSON.parse(fs.readFileSync(filePath, "utf8")); }
@@ -370,7 +371,7 @@ function sourceName(key) {
 /**
  * Build the combined GitHub issue report.
  */
-function buildReport({ changes, flagged, rejected, unknownVariants, extractResult, ingestResult, labFreshness, runDate, regen, extractionCrashed, browserbaseSkipped }) {
+function buildReport({ changes, flagged, rejected, unknownVariants, extractResult, ingestResult, labFreshness, runDate, regen, extractionCrashed, browserbaseSkipped, hfDiscoveryFailures }) {
   const parts = [];
 
   // ─── Header ─────────────────────────────────────────────
@@ -409,6 +410,16 @@ function buildReport({ changes, flagged, rejected, unknownVariants, extractResul
     }
     parts.push("");
     parts.push("</details>");
+    parts.push("");
+  }
+  if (hfDiscoveryFailures && hfDiscoveryFailures.failures?.length > 0) {
+    parts.push("## HF API Discovery Failed");
+    parts.push(`The Hugging Face Hub API returned an error for ${hfDiscoveryFailures.failures.length} source(s). `);
+    parts.push("Other labs ingested normally. Causes: HF rate limit, schema change, API outage, malformed UA blocked.");
+    parts.push("");
+    for (const item of hfDiscoveryFailures.failures) {
+      parts.push(`- **${item.source}** (\`${item.hfAuthor}\`): ${item.reason}`);
+    }
     parts.push("");
   }
 
@@ -587,6 +598,7 @@ async function main() {
   let extractResult = null;
   let extractionCrashed = false;
   let browserbaseSkipped = null; // payload from .browserbase-skip.json if present
+  let hfDiscoveryFailures = null; // payload from .hf-discovery-fail.json if present
 
   if (SKIP_EXTRACT) {
     console.log("\nStep 2: Extraction skipped (--skip-extract)");
@@ -595,6 +607,7 @@ async function main() {
     unlinkMarker(MARKER_STARTED);
     unlinkMarker(MARKER_COMPLETE);
     unlinkMarker(MARKER_BB_SKIP);
+    unlinkMarker(MARKER_HF_DISCOVERY_FAIL);
 
     const extractArgs = ["--no-report"];
     if (DRY_RUN) extractArgs.push("--dry-run");
@@ -612,6 +625,7 @@ async function main() {
     // Marker file inspection — single source of truth for "did extraction actually finish?"
     const completeMarker = readMarker(MARKER_COMPLETE);
     const bbSkipMarker = readMarker(MARKER_BB_SKIP);
+    const hfFailMarker = readMarker(MARKER_HF_DISCOVERY_FAIL);
 
     if (!completeMarker) {
       // Subprocess didn't write the complete marker → it crashed somewhere
@@ -622,11 +636,16 @@ async function main() {
       browserbaseSkipped = bbSkipMarker;
       console.warn(`\n  Warning: Browserbase was unavailable for ${bbSkipMarker.skippedUrls?.length || 0} article(s).`);
     }
+    if (hfFailMarker) {
+      hfDiscoveryFailures = hfFailMarker;
+      console.warn(`\n  Warning: HF API discovery failed for ${hfFailMarker.failures?.length || 0} source(s).`);
+    }
 
     // Tidy up — orchestrator owns marker lifecycle
     unlinkMarker(MARKER_STARTED);
     unlinkMarker(MARKER_COMPLETE);
     unlinkMarker(MARKER_BB_SKIP);
+    unlinkMarker(MARKER_HF_DISCOVERY_FAIL);
   }
 
   // ─── Step 3: Run ingestion ──────────────────────────────
@@ -732,6 +751,7 @@ async function main() {
     regen,
     extractionCrashed,
     browserbaseSkipped,
+    hfDiscoveryFailures,
   });
 
   console.log(`  Title: ${report.title}`);

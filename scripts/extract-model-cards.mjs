@@ -47,10 +47,11 @@ const { BENCHMARK_META } = require("../lib/config.js");
 const {
   extractRawImageUrl, filterContentImages, buildTextBlock,
   deduplicateScores, parsePublishDate,
+  filterHfModels, parseHfReadmeImages,
 } = require("../lib/extraction.js");
 const {
-  extractScoresFromImage, extractScoresFromText, classifyArticles,
-  reviewVariants,
+  extractScoresFromImage, extractScoresFromText, extractScoresFromHfMarkdown,
+  columnHeaderGuard, classifyArticles, reviewVariants,
 } = require("../lib/llm-extract.js");
 
 // ESM imports
@@ -121,6 +122,7 @@ const MARKER_DIR = os.tmpdir();
 const MARKER_STARTED = path.join(MARKER_DIR, "ai-race-extraction-started.json");
 const MARKER_COMPLETE = path.join(MARKER_DIR, "ai-race-extraction-complete.json");
 const MARKER_BB_SKIP = path.join(MARKER_DIR, "ai-race-browserbase-skip.json");
+const MARKER_HF_DISCOVERY_FAIL = path.join(MARKER_DIR, "ai-race-hf-discovery-fail.json");
 
 function writeMarker(filePath, payload) {
   try {
@@ -187,6 +189,199 @@ async function discoverViaFeed(source) {
     console.warn(`   WARNING: Found ${filtered.length} articles, expected at least ${source.minExpectedArticles}.`);
   }
   return capped;
+}
+
+// ─── Hugging Face API discovery ──────────────────────────────
+
+const HF_USER_AGENT = "ai-race-pipeline/1.0 (+https://ai-race.vercel.app)";
+const HF_DISCOVERY_LIMIT = 50;        // upper bound on the API response
+const HF_DISCOVERY_MAX_RESULTS = 20;  // how many candidates we'll process per lab
+
+/**
+ * Discover candidate model articles from a Hugging Face org via the Hub API.
+ * Pure HTTP, no browser. Throws on non-200 (caller logs + records via marker).
+ *
+ * Filter logic lives in lib/extraction.js#filterHfModels for testability.
+ */
+async function discoverViaHfApi(source) {
+  const apiUrl = `https://huggingface.co/api/models?author=${encodeURIComponent(source.hfAuthor)}&sort=lastModified&direction=-1&limit=${HF_DISCOVERY_LIMIT}`;
+  console.log(`   Fetching HF API ${source.name} (${source.hfAuthor})...`);
+
+  const resp = await fetch(apiUrl, {
+    headers: { "User-Agent": HF_USER_AGENT },
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!resp.ok) {
+    throw new Error(`HF API ${resp.status} ${resp.statusText} for ${source.hfAuthor}`);
+  }
+
+  const models = await resp.json();
+  if (!Array.isArray(models)) {
+    throw new Error(`HF API for ${source.hfAuthor} returned non-array (${typeof models})`);
+  }
+
+  const filtered = filterHfModels(models, { limit: HF_DISCOVERY_MAX_RESULTS });
+
+  const articles = filtered.map(m => ({
+    title: m.id,
+    url: `https://huggingface.co/${m.id}`,
+    modelName: String(m.id).split("/")[1] || String(m.id),
+    hfModelId: m.id,
+    lastModified: m.lastModified,
+    createdAt: m.createdAt,
+  }));
+
+  console.log(`   ${source.name}: ${models.length} total, ${articles.length} after filtering`);
+  if (source.minExpectedArticles && articles.length < source.minExpectedArticles) {
+    console.warn(`   WARNING: ${source.name} returned ${articles.length} candidates, expected at least ${source.minExpectedArticles}.`);
+  }
+
+  return articles;
+}
+
+// ─── Hugging Face README extraction ──────────────────────────
+
+/**
+ * Fetch + extract benchmark scores from a HF model card README.
+ * Pure HTTP, no browser. Returns { scores, publishDate } — same shape as extractFromArticle.
+ *
+ * publishDate is the HF createdAt (model release date). lastModified is used
+ * upstream by the re-extraction trigger, not by score dating.
+ */
+async function extractFromHfReadme(anthropic, article) {
+  console.log(`\n   Extracting: "${article.modelName}" from ${article.url}`);
+  const publishDate = article.createdAt ? new Date(article.createdAt) : null;
+  if (publishDate) {
+    console.log(`     Publish date (HF createdAt): ${publishDate.toISOString().split("T")[0]}`);
+  }
+
+  // Resolve to a sha so the URL is stable across the run even if branch updates.
+  let revision = "main";
+  try {
+    const metaResp = await fetch(`https://huggingface.co/api/models/${article.hfModelId}`, {
+      headers: { "User-Agent": HF_USER_AGENT },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (metaResp.ok) {
+      const meta = await metaResp.json();
+      if (meta && typeof meta.sha === "string" && meta.sha.length > 0) {
+        revision = meta.sha;
+      }
+    } else {
+      console.warn(`     HF metadata fetch returned ${metaResp.status} (proceeding with main)`);
+    }
+  } catch (err) {
+    console.warn(`     HF metadata fetch error: ${err.message.substring(0, 100)} (proceeding with main)`);
+  }
+
+  // Fetch README. Tolerate 401/403 (gated) / 404 (no README) by returning empty + loud log.
+  const readmeUrl = `https://huggingface.co/${article.hfModelId}/raw/${revision}/README.md`;
+  let markdown;
+  try {
+    const resp = await fetch(readmeUrl, {
+      headers: { "User-Agent": HF_USER_AGENT },
+      signal: AbortSignal.timeout(30000),
+    });
+    if (resp.status === 401 || resp.status === 403) {
+      console.warn(`     [HF gated] README requires auth (${resp.status}): ${article.hfModelId}`);
+      return { scores: [], publishDate };
+    }
+    if (resp.status === 404) {
+      console.warn(`     [HF missing] No README: ${article.hfModelId}`);
+      return { scores: [], publishDate };
+    }
+    if (!resp.ok) {
+      console.warn(`     README fetch failed: ${resp.status} ${resp.statusText}`);
+      return { scores: [], publishDate };
+    }
+    markdown = await resp.text();
+  } catch (err) {
+    console.warn(`     README fetch error: ${err.message.substring(0, 100)}`);
+    return { scores: [], publishDate };
+  }
+
+  if (!markdown || markdown.trim().length < 100) {
+    console.warn(`     README very short (${markdown.length} chars), skipping LLM`);
+    return { scores: [], publishDate };
+  }
+
+  // Image references
+  const imageUrls = parseHfReadmeImages(markdown, article.hfModelId, revision);
+  const HF_IMAGE_CAP = 5;
+  const cappedUrls = imageUrls.slice(0, HF_IMAGE_CAP);
+  console.log(`     Found ${imageUrls.length} image refs (using top ${cappedUrls.length})`);
+
+  // Download in parallel (existing helper, pure fetch)
+  const downloadResults = await Promise.all(
+    cappedUrls.map(async (imgUrl) => {
+      const result = await downloadImage(imgUrl);
+      if (result) return { url: imgUrl, ...result };
+      return null;
+    })
+  );
+  const downloadedImages = downloadResults.filter(Boolean);
+  console.log(`     Downloaded ${downloadedImages.length}/${cappedUrls.length} images`);
+
+  // Vision in parallel (cap concurrency)
+  const MAX_CONCURRENT_VISION = 5;
+  const visionScores = [];
+  for (let i = 0; i < downloadedImages.length; i += MAX_CONCURRENT_VISION) {
+    const batch = downloadedImages.slice(i, i + MAX_CONCURRENT_VISION);
+    const batchResults = await Promise.all(
+      batch.map(img =>
+        extractScoresFromImage(anthropic, {
+          base64Data: img.base64Data,
+          mediaType: img.mediaType,
+          modelName: article.modelName,
+        }).catch(err => {
+          console.warn(`     Vision error on ${img.url.substring(0, 80)}: ${err.message.substring(0, 100)}`);
+          return [];
+        })
+      )
+    );
+    visionScores.push(...batchResults.flat());
+  }
+
+  // HF-specific markdown extractor + column-header guard
+  let textScores = [];
+  try {
+    const raw = await extractScoresFromHfMarkdown(anthropic, {
+      markdown,
+      modelName: article.modelName,
+    });
+    const guarded = columnHeaderGuard(raw, article.modelName);
+    textScores = guarded.kept;
+    if (guarded.dropped.length > 0) {
+      console.log(`     Column-header guard dropped ${guarded.dropped.length} score(s):`);
+      for (const d of guarded.dropped) {
+        console.log(`       — ${d.benchmark}: ${d.score} from "${d.column_header}"`);
+      }
+    }
+  } catch (err) {
+    console.warn(`     HF markdown extraction error: ${err.message.substring(0, 100)}`);
+  }
+
+  console.log(`     Vision: ${visionScores.length} scores from ${downloadedImages.length} images`);
+  console.log(`     Text: ${textScores.length} scores`);
+
+  if (visionScores.length > 0) {
+    console.log(`\n     --- Raw vision scores ---`);
+    for (const s of visionScores) {
+      console.log(`     ${s.benchmark}: ${s.score}${s.model_variant ? ` [variant: ${s.model_variant}]` : ""}`);
+    }
+  }
+  if (textScores.length > 0) {
+    console.log(`\n     --- Raw text scores ---`);
+    for (const s of textScores) {
+      console.log(`     ${s.benchmark}: ${s.score}${s.model_variant ? ` [variant: ${s.model_variant}]` : ""}${s.column_header ? ` [col: ${s.column_header}]` : ""}`);
+    }
+  }
+  console.log("");
+
+  const deduped = deduplicateScores(visionScores, textScores);
+  console.log(`     ${deduped.length} unique scores after dedup`);
+
+  return { scores: deduped, publishDate };
 }
 
 // ─── Blog index scanning ─────────────────────────────────────
@@ -608,6 +803,7 @@ async function main() {
   unlinkMarker(MARKER_STARTED);
   unlinkMarker(MARKER_COMPLETE);
   unlinkMarker(MARKER_BB_SKIP);
+  unlinkMarker(MARKER_HF_DISCOVERY_FAIL);
   writeMarker(MARKER_STARTED, { pid: process.pid, dryRun: DRY_RUN });
 
   const supabase = DRY_RUN ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -619,9 +815,12 @@ async function main() {
   const browserbaseSkipped = []; // { url, reason } — populated if Browserbase is unavailable
   let browserbaseUnavailable = false;
 
-  // Get last extraction date + processed URLs from DB
+  // Get last extraction date + processed URLs from DB.
+  // processedUrls is a Map<url, mostRecentExtractedAt> so HF sources can re-extract
+  // when their README's lastModified moves past the prior extracted_at (post-launch
+  // README edits are common — labs push a stub then fill in eval tables).
   let lastExtractionDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const processedUrls = new Set();
+  const processedUrls = new Map();
 
   if (supabase) {
     const { data: lastData } = await supabase
@@ -637,13 +836,28 @@ async function main() {
     if (!FORCE) {
       const { data: urlData } = await supabase
         .from("benchmark_raw")
-        .select("source_url")
+        .select("source_url, extracted_at")
         .eq("source", "model_card_auto")
         .not("source_url", "is", null);
       if (urlData) {
-        for (const row of urlData) processedUrls.add(row.source_url);
+        for (const row of urlData) {
+          const prev = processedUrls.get(row.source_url);
+          if (!prev || new Date(row.extracted_at) > new Date(prev)) {
+            processedUrls.set(row.source_url, row.extracted_at);
+          }
+        }
       }
     }
+  }
+
+  // Returns true if this URL has been processed AND there is no signal that the
+  // upstream content has been updated since (HF only — non-HF articles have no
+  // lastModified, so they always skip when processedUrls.has(url) is true).
+  function shouldSkipAlreadyProcessed(article) {
+    if (!processedUrls.has(article.url)) return false;
+    if (!article.lastModified) return true;
+    const prevAt = processedUrls.get(article.url);
+    return new Date(article.lastModified) <= new Date(prevAt);
   }
 
   console.log(`Last extraction: ${lastExtractionDate.toISOString().split("T")[0]}`);
@@ -668,6 +882,7 @@ async function main() {
 
   const newArticles = [];
   const allExtracted = [];
+  const hfDiscoveryFailures = []; // { source, reason } — surfaces in marker file
 
   // ─── Step 1: Discover articles ─────────────────────────────
 
@@ -690,9 +905,15 @@ async function main() {
       ? LAB_SOURCES.filter(s => s.lab === LAB_FILTER || s.name.toLowerCase() === LAB_FILTER)
       : LAB_SOURCES;
 
-    // Split sources into feed-based (no browser needed) and browser-based
+    // Split sources by discovery method:
+    //   feedSources    — RSS (no browser)
+    //   hfApiSources   — HF Hub API (no browser)
+    //   browserSources — DOM scanning (Playwright/Browserbase)
     const feedSources = sources.filter(s => s.feedUrl);
-    const browserSources = sources.filter(s => !s.feedUrl);
+    const hfApiSources = sources.filter(s => s.scanMethod === "huggingfaceApi");
+    const browserSources = sources.filter(s =>
+      !s.feedUrl && s.scanMethod !== "huggingfaceApi"
+    );
 
     // Discover from feeds first (no browser, avoids triggering anti-bot)
     for (const source of feedSources) {
@@ -707,7 +928,7 @@ async function main() {
           const article = articles[cls.index];
           if (!article) continue;
 
-          if (processedUrls.has(article.url)) {
+          if (shouldSkipAlreadyProcessed(article)) {
             console.log(`   Skipping (already processed): ${article.title}`);
             continue;
           }
@@ -722,6 +943,42 @@ async function main() {
         }
       } catch (err) {
         console.warn(`   Error fetching feed for ${source.name}: ${err.message.substring(0, 150)}`);
+      }
+    }
+
+    // Discover from HF API sources (no browser, no LLM classification — discovery
+    // already filters by createdAt + lastModified + pipeline_tag).
+    for (const source of hfApiSources) {
+      try {
+        const articles = await discoverViaHfApi(source);
+        for (const article of articles) {
+          if (shouldSkipAlreadyProcessed(article)) {
+            console.log(`   Skipping (already processed, README unchanged): ${article.modelName}`);
+            continue;
+          }
+
+          // Re-extraction of an HF article whose README changed: surface explicitly.
+          if (processedUrls.has(article.url)) {
+            console.log(`   RE-EXTRACT (README updated): ${article.modelName}`);
+          } else {
+            console.log(`   NEW: ${article.modelName}`);
+          }
+
+          newArticles.push({
+            source,
+            title: article.title,
+            url: article.url,
+            modelName: article.modelName,
+            hfModelId: article.hfModelId,
+            lastModified: article.lastModified,
+            createdAt: article.createdAt,
+          });
+        }
+      } catch (err) {
+        const reason = err.message.substring(0, 200);
+        console.error(`   HF API discovery failed for ${source.name}: ${reason}`);
+        hfDiscoveryFailures.push({ source: source.name, hfAuthor: source.hfAuthor, reason });
+        // Continue — other sources should still process. Surface via marker file.
       }
     }
 
@@ -773,7 +1030,7 @@ async function main() {
             const article = articles[cls.index];
             if (!article) continue;
 
-            if (processedUrls.has(article.url)) {
+            if (shouldSkipAlreadyProcessed(article)) {
               console.log(`   Skipping (already processed): ${article.title}`);
               continue;
             }
@@ -800,24 +1057,46 @@ async function main() {
   if (newArticles.length === 0) {
     console.log("No new articles to process. Done.");
     await pool.closeAll();
+    if (hfDiscoveryFailures.length > 0) {
+      writeMarker(MARKER_HF_DISCOVERY_FAIL, {
+        reason: "HF API discovery failed for one or more sources",
+        failures: hfDiscoveryFailures,
+      });
+    }
     writeMarker(MARKER_COMPLETE, {
       articlesProcessed: 0,
       scoresExtracted: 0,
       browserbaseSkipped: 0,
       browserbaseUnavailable,
+      hfDiscoveryFailures: hfDiscoveryFailures.length,
     });
     return;
   }
 
   // ─── Step 2: Extract scores from articles ──────────────────
-  // Per-article dispatch via BrowserPool: sources with `useBrowserbase: true`
-  // (currently OpenAI) get the cloud browser; everything else gets local headless.
-  // Browserbase availability errors are isolated per article — other labs ingest normally.
+  // Per-article dispatch:
+  //   HF API sources    → extractFromHfReadme (no browser, pure HTTP)
+  //   useBrowserbase    → cloud browser (currently OpenAI only)
+  //   default           → local headless Playwright
+  // Browser failures (Browserbase outage, HF API errors) are isolated per article —
+  // other labs ingest normally.
 
   console.log("Step 2: Extracting scores from articles...\n");
 
   try {
     for (const article of newArticles) {
+      // HF API path: no browser at all. Pure HTTP fetch + LLM.
+      if (article.source.scanMethod === "huggingfaceApi") {
+        try {
+          const { scores, publishDate } = await extractFromHfReadme(anthropic, article);
+          allExtracted.push({ article, scores, publishDate });
+        } catch (err) {
+          console.error(`   FAILED: ${article.title}: ${err.message.substring(0, 200)}`);
+          allExtracted.push({ article, scores: [], publishDate: null });
+        }
+        continue;
+      }
+
       const kind = browserKindFor(article.source);
 
       // Acquire browser of the right kind. Browserbase failure → skip + mark.
@@ -880,6 +1159,14 @@ async function main() {
       skippedUrls: browserbaseSkipped,
     });
     console.warn(`   ${browserbaseSkipped.length} article(s) skipped due to Browserbase unavailability — see ${MARKER_BB_SKIP}`);
+  }
+
+  if (hfDiscoveryFailures.length > 0) {
+    writeMarker(MARKER_HF_DISCOVERY_FAIL, {
+      reason: "HF API discovery failed for one or more sources",
+      failures: hfDiscoveryFailures,
+    });
+    console.warn(`   ${hfDiscoveryFailures.length} HF source(s) failed discovery — see ${MARKER_HF_DISCOVERY_FAIL}`);
   }
 
   // Log date filtering summary
@@ -1223,6 +1510,7 @@ async function main() {
     scoresExtracted: rawRows.length,
     browserbaseSkipped: browserbaseSkipped.length,
     browserbaseUnavailable,
+    hfDiscoveryFailures: hfDiscoveryFailures.length,
   });
 }
 
