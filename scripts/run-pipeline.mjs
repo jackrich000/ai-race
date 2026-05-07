@@ -324,9 +324,8 @@ async function queryLabFreshness(supabase) {
  */
 async function queryStreakAlerts(supabase) {
   const STREAK_THRESHOLD = 4;
-  const historyByLab = {};
 
-  for (const lab of EXTRACTED_LABS) {
+  const queries = EXTRACTED_LABS.map(async (lab) => {
     const { data, error } = await supabase
       .from("pipeline_runs")
       .select("articles_scraped, scores_yielded, run_started_at")
@@ -337,12 +336,12 @@ async function queryStreakAlerts(supabase) {
     if (error) {
       // Don't crash the report on a missing table (pre-migration runs); log and skip.
       console.warn(`  Warning: streak query failed for ${lab}: ${error.message}`);
-      historyByLab[lab] = [];
-      continue;
+      return [lab, []];
     }
-    historyByLab[lab] = data || [];
-  }
+    return [lab, data || []];
+  });
 
+  const historyByLab = Object.fromEntries(await Promise.all(queries));
   return detectStreakAlerts(historyByLab, { streakThreshold: STREAK_THRESHOLD });
 }
 

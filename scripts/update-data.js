@@ -98,7 +98,7 @@ const SOURCE_THRESHOLDS = {
   // model_card / model_card_auto / manual: no threshold (not subject to external failure)
 };
 
-const SOURCE_HEALTH_MARKER = require("path").join(require("os").tmpdir(), "ai-race-source-health.json");
+const SOURCE_HEALTH_MARKER = path.join(os.tmpdir(), "ai-race-source-health.json");
 
 // ─── Source 6: Model card data (self-reported, unverified) ────
 // Hardcoded here so the scoped DELETE doesn't wipe it on re-run.
