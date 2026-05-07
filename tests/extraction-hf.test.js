@@ -261,4 +261,13 @@ describe("columnHeaderGuard", () => {
     const { kept } = columnHeaderGuard(scores, "DeepSeek-V4-Pro-Base");
     expect(kept).toHaveLength(1);
   });
+
+  it("does not match `Base` mid-word (Baseline, BabyBench, database)", () => {
+    const scores = [
+      { benchmark: "BabyBench", score: 90, column_header: "Kimi-K2.6" },
+      { benchmark: "Baseline-Suite", score: 70, column_header: "Kimi-K2.6" },
+    ];
+    const { kept } = columnHeaderGuard(scores, "Kimi-K2.6");
+    expect(kept).toHaveLength(2);
+  });
 });

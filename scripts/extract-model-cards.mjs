@@ -197,6 +197,44 @@ const HF_USER_AGENT = "ai-race-pipeline/1.0 (+https://ai-race.vercel.app)";
 const HF_DISCOVERY_LIMIT = 50;        // upper bound on the API response
 const HF_DISCOVERY_MAX_RESULTS = 20;  // how many candidates we'll process per lab
 
+// Retry transient HF errors. Weekly cadence + single-fetch failure mode means
+// one 503 would cost a lab's discovery for the week without retries.
+async function fetchWithRetry(url, opts = {}, attempts = 3) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const resp = await fetch(url, opts);
+      // 5xx or 429 → retry with backoff; 4xx → caller decides
+      if (resp.status >= 500 || resp.status === 429) {
+        lastErr = new Error(`HF transient ${resp.status} ${resp.statusText} for ${url}`);
+      } else {
+        return resp;
+      }
+    } catch (err) {
+      lastErr = err;
+    }
+    if (i < attempts - 1) {
+      const backoffMs = 500 * Math.pow(2, i); // 500, 1000, 2000
+      await new Promise(r => setTimeout(r, backoffMs));
+    }
+  }
+  throw lastErr;
+}
+
+// Strip HF-only prompt-output fields before scores leave the extractor.
+// `column_header`, `row_label`, `table_caption` are scaffolding for the
+// extraction prompt and the column-header guard — downstream consumers
+// (deduplicateScores, reviewVariants, triage, the row builder) read `notes`
+// with different semantics, so HF-prompt prose like "main eval table" /
+// "marketing section" must be removed to avoid colliding with reviewVariants'
+// "main benchmark table" vs "footnote" heuristic.
+function stripHfPromptScaffolding(scores) {
+  return scores.map(s => {
+    const { column_header, row_label, table_caption, notes, ...rest } = s;
+    return rest;
+  });
+}
+
 /**
  * Discover candidate model articles from a Hugging Face org via the Hub API.
  * Pure HTTP, no browser. Throws on non-200 (caller logs + records via marker).
@@ -207,7 +245,7 @@ async function discoverViaHfApi(source) {
   const apiUrl = `https://huggingface.co/api/models?author=${encodeURIComponent(source.hfAuthor)}&sort=lastModified&direction=-1&limit=${HF_DISCOVERY_LIMIT}`;
   console.log(`   Fetching HF API ${source.name} (${source.hfAuthor})...`);
 
-  const resp = await fetch(apiUrl, {
+  const resp = await fetchWithRetry(apiUrl, {
     headers: { "User-Agent": HF_USER_AGENT },
     signal: AbortSignal.timeout(30000),
   });
@@ -258,7 +296,7 @@ async function extractFromHfReadme(anthropic, article) {
   // Resolve to a sha so the URL is stable across the run even if branch updates.
   let revision = "main";
   try {
-    const metaResp = await fetch(`https://huggingface.co/api/models/${article.hfModelId}`, {
+    const metaResp = await fetchWithRetry(`https://huggingface.co/api/models/${article.hfModelId}`, {
       headers: { "User-Agent": HF_USER_AGENT },
       signal: AbortSignal.timeout(20000),
     });
@@ -278,7 +316,7 @@ async function extractFromHfReadme(anthropic, article) {
   const readmeUrl = `https://huggingface.co/${article.hfModelId}/raw/${revision}/README.md`;
   let markdown;
   try {
-    const resp = await fetch(readmeUrl, {
+    const resp = await fetchWithRetry(readmeUrl, {
       headers: { "User-Agent": HF_USER_AGENT },
       signal: AbortSignal.timeout(30000),
     });
@@ -381,7 +419,15 @@ async function extractFromHfReadme(anthropic, article) {
   const deduped = deduplicateScores(visionScores, textScores);
   console.log(`     ${deduped.length} unique scores after dedup`);
 
-  return { scores: deduped, publishDate };
+  // Strip HF-specific scaffolding fields before handing scores to the rest of
+  // the pipeline. column_header / row_label / table_caption / notes were used
+  // to drive the column-header guard and audit logging only. `notes` in
+  // particular collides with reviewVariants' "main benchmark table" / "footnote"
+  // semantics — leaving HF prose like "marketing section" in the field would
+  // confuse the existing variant-review LLM.
+  const cleaned = stripHfPromptScaffolding(deduped);
+
+  return { scores: cleaned, publishDate };
 }
 
 // ─── Blog index scanning ─────────────────────────────────────

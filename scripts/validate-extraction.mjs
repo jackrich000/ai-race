@@ -115,12 +115,12 @@ const GROUND_TRUTHS = [
     ],
   },
   // ── Hugging Face API path (no browser) ──────────────────────────
-  // GT URLs pin to a specific commit sha so the GT validates exactly the README
-  // content the scores correspond to. If the lab pushes a README revision, the
-  // sha needs updating here. Production extraction uses the latest sha at runtime,
-  // so a stale GT does NOT block the pipeline — it just surfaces in this report.
-  //
-  // To refresh: GET /api/models/<id>, copy `.sha`, paste into `revision`.
+  // `revision: "main"` follows the lab's latest README. If a lab edits scores
+  // post-launch, this validation will start failing — which is the signal we
+  // want (production also reads the latest sha, so divergence between GT and
+  // production is itself a regression of interest). To pin a specific commit
+  // (e.g. while debugging a known-good GT), replace `"main"` with the sha
+  // returned by `GET /api/models/<id>`.
   {
     lab: "chinese",
     slug: "deepseek",
