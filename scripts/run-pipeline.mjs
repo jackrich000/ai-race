@@ -400,8 +400,11 @@ function sourceName(key) {
 /**
  * Build the combined GitHub issue report.
  */
-function buildReport({ changes, flagged, rejected, unknownVariants, extractResult, ingestResult, labFreshness, runDate, regen, extractionCrashed, browserbaseSkipped, hfDiscoveryFailures, sourceHealthFailures, streak }) {
+function buildReport({ changes, flagged, rejected, unknownVariants, extractResult, ingestResult, labFreshness, runDate, regen, extractionCrashed, browserbaseSkipped, hfDiscoveryFailures, sourceHealth, streak }) {
   const parts = [];
+
+  const sourceHealthFailures = (sourceHealth && sourceHealth.failures) || [];
+  const hasSourceHealthFailure = sourceHealthFailures.length > 0;
 
   // ─── Header ─────────────────────────────────────────────
   let extractStatus;
@@ -411,7 +414,7 @@ function buildReport({ changes, flagged, rejected, unknownVariants, extractResul
   else extractStatus = `FAILED (exit ${extractResult.code})`;
 
   let ingestStatus;
-  if (sourceHealthFailures) ingestStatus = "ABORTED (source health)";
+  if (hasSourceHealthFailure) ingestStatus = "ABORTED (source health)";
   else ingestStatus = ingestResult.code === 0 ? "OK" : `FAILED (exit ${ingestResult.code})`;
 
   parts.push(`## Pipeline Run (${runDate})`);
@@ -421,21 +424,38 @@ function buildReport({ changes, flagged, rejected, unknownVariants, extractResul
   }
   parts.push("");
 
-  // ─── Source Health Failure (intentional ingestion abort) ─
-  if (sourceHealthFailures && sourceHealthFailures.length > 0) {
-    parts.push(`## Source Health Failure (${sourceHealthFailures.length})`);
-    parts.push("Ingestion aborted before any DB writes. **Existing data is preserved** — the site continues to display last-good scores.");
-    parts.push("");
-    parts.push("The following source(s) returned suspiciously empty data, suggesting a URL change, API outage, or DOM restructure:");
-    parts.push("");
-    parts.push("| Source | Rows returned | Minimum expected |");
-    parts.push("|--------|---------------|------------------|");
-    for (const f of sourceHealthFailures) {
-      parts.push(`| \`${f.source}\` | ${f.rowCount} | ${f.threshold} |`);
+  // ─── Source Health (always rendered when marker was written) ─
+  if (sourceHealth && sourceHealth.counts && Object.keys(sourceHealth.counts).length > 0) {
+    if (hasSourceHealthFailure) {
+      parts.push(`## Source Health Failure (${sourceHealthFailures.length})`);
+      parts.push("Ingestion aborted before any DB writes. **Existing data is preserved** — the site continues to display last-good scores.");
+      parts.push("");
+      parts.push("The following source(s) returned suspiciously empty data, suggesting a URL change, API outage, or DOM restructure:");
+      parts.push("");
+      parts.push("| Source | Rows returned | Minimum expected | Status |");
+      parts.push("|--------|---------------|------------------|--------|");
+      for (const source of Object.keys(sourceHealth.counts)) {
+        const count = sourceHealth.counts[source];
+        const threshold = sourceHealth.thresholds?.[source] ?? "—";
+        const status = count < (threshold || 0) ? "**FAIL**" : "ok";
+        parts.push(`| \`${source}\` | ${count} | ${threshold} | ${status} |`);
+      }
+      parts.push("");
+      parts.push("**Next steps**: investigate the failing source(s), fix the fetcher in `scripts/update-data.js`, and re-run the pipeline. If a source has legitimately shrunk, lower its threshold in `SOURCE_THRESHOLDS`.");
+      parts.push("");
+    } else {
+      parts.push("## Source Health");
+      parts.push("Per-source row counts this run. Watch for sources trending toward their threshold — that's the early warning before a real abort.");
+      parts.push("");
+      parts.push("| Source | Rows returned | Minimum expected |");
+      parts.push("|--------|---------------|------------------|");
+      for (const source of Object.keys(sourceHealth.counts)) {
+        const count = sourceHealth.counts[source];
+        const threshold = sourceHealth.thresholds?.[source] ?? "—";
+        parts.push(`| \`${source}\` | ${count} | ${threshold} |`);
+      }
+      parts.push("");
     }
-    parts.push("");
-    parts.push("**Next steps**: investigate the failing source(s), fix the fetcher in `scripts/update-data.js`, and re-run the pipeline. If a source has legitimately shrunk, lower its threshold in `SOURCE_THRESHOLDS`.");
-    parts.push("");
   }
 
   // ─── Extraction issues (crash or Browserbase unavailability) ─
@@ -607,7 +627,7 @@ function buildReport({ changes, flagged, rejected, unknownVariants, extractResul
   const reviewCount = totalFlagged;
 
   let title;
-  if (sourceHealthFailures && sourceHealthFailures.length > 0) {
+  if (hasSourceHealthFailure) {
     const n = sourceHealthFailures.length;
     title = `[Pipeline] ${runDate}: FAILED — ${n} source${n !== 1 ? "s" : ""} below threshold`;
   } else if (scoreCount > 0 && reviewCount > 0) {
@@ -619,13 +639,13 @@ function buildReport({ changes, flagged, rejected, unknownVariants, extractResul
   } else {
     title = `[Pipeline] ${runDate}: No changes`;
   }
-  if (streakAlerts.length > 0 && !(sourceHealthFailures && sourceHealthFailures.length > 0)) {
+  if (streakAlerts.length > 0 && !hasSourceHealthFailure) {
     title += ` + ${streakAlerts.length} streak alert${streakAlerts.length !== 1 ? "s" : ""}`;
   }
 
   const labelSet = new Set(["pipeline-report"]);
   if (totalFlagged > 0 || staleLabs.length > 0) labelSet.add("needs-review");
-  if (sourceHealthFailures && sourceHealthFailures.length > 0) labelSet.add("pipeline-failure");
+  if (hasSourceHealthFailure) labelSet.add("pipeline-failure");
   if (streakAlerts.length > 0) labelSet.add("pipeline-alert");
   const labels = [...labelSet].join(",");
 
@@ -737,7 +757,8 @@ async function main() {
 
   // ─── Step 3: Run ingestion ──────────────────────────────
   let ingestResult;
-  let sourceHealthFailures = null;
+  let sourceHealth = null; // { counts, thresholds, failures } — populated from marker on every run
+  let sourceHealthAborted = false; // true only when failures exist (ingestion intentionally aborted)
 
   if (DRY_RUN) {
     console.log("\nStep 3: Ingestion skipped (dry run)");
@@ -749,29 +770,31 @@ async function main() {
       "Step 3: Ingestion"
     );
 
-    // Detect source-health abort. Marker is the primary signal; stdout sentinel
-    // is the fallback if marker write failed (rare but possible on Windows/EACCES).
+    // Marker is written on every run with counts + thresholds + failures.
+    // Stdout sentinel is the fallback only if the marker write itself failed.
     const sourceHealthMarker = readMarker(MARKER_SOURCE_HEALTH);
     if (sourceHealthMarker) {
-      sourceHealthFailures = sourceHealthMarker.failures || [];
+      sourceHealth = sourceHealthMarker;
     } else if (ingestResult.code !== 0 && /\[SOURCE-HEALTH-FAIL\]/.test(ingestResult.stderr || "")) {
-      // Stdout sentinel fallback. Parse "source=count/threshold" tokens from stderr.
       const match = (ingestResult.stderr || "").match(/\[SOURCE-HEALTH-FAIL\] (.+)/);
       if (match) {
-        sourceHealthFailures = match[1].trim().split(/\s+/).map(token => {
+        const failures = match[1].trim().split(/\s+/).map(token => {
           const [source, ratio] = token.split("=");
           const [rowCount, threshold] = (ratio || "").split("/").map(Number);
           return { source, rowCount, threshold };
         }).filter(f => f.source);
+        sourceHealth = { counts: {}, thresholds: {}, failures };
         console.warn(`  Recovered source-health failures from stdout sentinel (marker write may have failed).`);
       }
     }
     unlinkMarker(MARKER_SOURCE_HEALTH);
 
+    sourceHealthAborted = !!(sourceHealth && sourceHealth.failures && sourceHealth.failures.length > 0);
+
     if (ingestResult.code !== 0) {
-      if (sourceHealthFailures) {
-        console.warn(`\n  Source health: ${sourceHealthFailures.length} source(s) below threshold. Ingestion aborted intentionally; existing data preserved.`);
-        // Continue to report posting; downstream steps gate on sourceHealthFailures.
+      if (sourceHealthAborted) {
+        console.warn(`\n  Source health: ${sourceHealth.failures.length} source(s) below threshold. Ingestion aborted intentionally; existing data preserved.`);
+        // Continue to report posting; downstream steps gate on sourceHealthAborted.
       } else {
         console.error("\n  Error: Ingestion failed unexpectedly. Aborting.");
         process.exit(1);
@@ -780,7 +803,7 @@ async function main() {
   }
 
   // ─── Step 4: Post-ingestion health check ────────────────
-  if (sourceHealthFailures) {
+  if (sourceHealthAborted) {
     console.log("\nStep 4: Health check skipped (source-health abort — ingestion did not write).");
   } else {
     console.log("\nStep 4: Health check...");
@@ -811,7 +834,7 @@ async function main() {
 
   // ─── Step 5.5: Compute analyses-regen gate ──────────────
   let regen;
-  if (sourceHealthFailures) {
+  if (sourceHealthAborted) {
     regen = { shouldRegen: false, reason: "source-health abort: no score changes possible" };
     console.log(`\nStep 5.5: Analyses regen skipped (${regen.reason})`);
   } else {
@@ -884,7 +907,7 @@ async function main() {
     extractionCrashed,
     browserbaseSkipped,
     hfDiscoveryFailures,
-    sourceHealthFailures,
+    sourceHealth,
     streak,
   });
 

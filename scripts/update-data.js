@@ -748,6 +748,8 @@ async function main() {
   // ─── Source-level sanity check ──────────────────────────────
   // Abort before any DB writes if a normally-populated source returned suspiciously
   // empty. Preserves last-good benchmark_scores; signals via marker + stdout sentinel.
+  // The marker is written on every run (success or failure) so the orchestrator
+  // can render a "Source Health" table in the issue body for ongoing trend visibility.
   const sourceCounts = {
     artificialanalysis: aaData,
     swebench:           sweData,
@@ -755,26 +757,34 @@ async function main() {
     epoch:              epochData,
   };
   const sourceFailures = checkSourceThresholds(sourceCounts, SOURCE_THRESHOLDS);
+  const sourceCountsForMarker = {};
+  for (const source of Object.keys(SOURCE_THRESHOLDS)) {
+    sourceCountsForMarker[source] = (sourceCounts[source] || []).length;
+  }
 
   console.log("\n   Source health:");
   for (const [source, threshold] of Object.entries(SOURCE_THRESHOLDS)) {
-    const count = (sourceCounts[source] || []).length;
+    const count = sourceCountsForMarker[source];
     const status = count < threshold ? "FAIL" : "ok";
     console.log(`     ${source}: ${count} rows (min ${threshold}) [${status}]`);
+  }
+
+  // Write marker on every run. Orchestrator uses .failures.length > 0 to decide
+  // whether ingestion aborted; .counts/.thresholds drive the healthy-run table.
+  try {
+    fs.writeFileSync(SOURCE_HEALTH_MARKER, JSON.stringify({
+      counts: sourceCountsForMarker,
+      thresholds: { ...SOURCE_THRESHOLDS },
+      failures: sourceFailures,
+    }, null, 2));
+  } catch (err) {
+    console.error(`   Marker write failed: ${err.message}`);
   }
 
   if (sourceFailures.length > 0) {
     // Stdout sentinel — belt-and-suspenders if marker write fails (rare but possible).
     const sentinel = sourceFailures.map(f => `${f.source}=${f.rowCount}/${f.threshold}`).join(" ");
     console.error(`\n[SOURCE-HEALTH-FAIL] ${sentinel}`);
-
-    try {
-      fs.writeFileSync(SOURCE_HEALTH_MARKER, JSON.stringify({ failures: sourceFailures }, null, 2));
-      console.error(`   Wrote source-health marker: ${SOURCE_HEALTH_MARKER}`);
-    } catch (err) {
-      console.error(`   Marker write failed (continuing via stdout sentinel): ${err.message}`);
-    }
-
     console.error(`\n   ABORT: ${sourceFailures.length} source(s) below threshold. Skipping DB writes to preserve existing data.`);
     console.error("   Re-run after the failing source(s) recover.");
     process.exit(1);
