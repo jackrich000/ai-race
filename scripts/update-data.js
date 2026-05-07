@@ -38,6 +38,7 @@ const {
   arcModelIdToLab, modelNameToLab,
   filterVerifiedDuplicates, computeCumulativeBest, computeCumulativeMin,
   generateMatchVerifiedRegex, normalizeVariant, splitVariantFromModel, findCol,
+  checkSourceThresholds,
 } = require("../lib/pipeline.js");
 
 // Current quarter midpoint for ARC Prize entries without extractable dates
@@ -82,6 +83,22 @@ const EPOCH_BENCHMARK_FILES = {
   "frontiermath.csv":             { key: "frontiermath", scoreCol: "mean_score" },
   "math_level_5.csv":             { key: "math-l5",      scoreCol: "mean_score" },
 };
+
+// Source-level abort thresholds. If a fetcher returns fewer rows than its threshold,
+// abort before the delete+insert to preserve last-good benchmark_scores.
+// Defends against silent source failures (URL change, API down, DOM restructure)
+// where the existing benchmark-level checks pass because surviving sources cover
+// the gap, but verified lab-attributed rows are silently lost.
+// Calibrated against typical row counts; tune during quarterly maintenance.
+const SOURCE_THRESHOLDS = {
+  artificialanalysis: 100,  // typical ~569
+  swebench:           30,   // typical ~115
+  arcprize:           50,   // typical ~265 (returned 0 in the failure that motivated this)
+  epoch:              100,  // typical ~559
+  // model_card / model_card_auto / manual: no threshold (not subject to external failure)
+};
+
+const SOURCE_HEALTH_MARKER = path.join(os.tmpdir(), "ai-race-source-health.json");
 
 // ─── Source 6: Model card data (self-reported, unverified) ────
 // Hardcoded here so the scoped DELETE doesn't wipe it on re-run.
@@ -727,6 +744,51 @@ async function main() {
     fetchEpoch().catch(err => { console.error("   [Epoch] FAILED:", err.message); return []; }),
     fetchCostData().catch(err => { console.error("   [Cost] FAILED:", err.message); return []; }),
   ]);
+
+  // ─── Source-level sanity check ──────────────────────────────
+  // Abort before any DB writes if a normally-populated source returned suspiciously
+  // empty. Preserves last-good benchmark_scores; signals via marker + stdout sentinel.
+  // The marker is written on every run (success or failure) so the orchestrator
+  // can render a "Source Health" table in the issue body for ongoing trend visibility.
+  const sourceCounts = {
+    artificialanalysis: aaData,
+    swebench:           sweData,
+    arcprize:           arcData,
+    epoch:              epochData,
+  };
+  const sourceFailures = checkSourceThresholds(sourceCounts, SOURCE_THRESHOLDS);
+  const sourceCountsForMarker = {};
+  for (const source of Object.keys(SOURCE_THRESHOLDS)) {
+    sourceCountsForMarker[source] = (sourceCounts[source] || []).length;
+  }
+
+  console.log("\n   Source health:");
+  for (const [source, threshold] of Object.entries(SOURCE_THRESHOLDS)) {
+    const count = sourceCountsForMarker[source];
+    const status = count < threshold ? "FAIL" : "ok";
+    console.log(`     ${source}: ${count} rows (min ${threshold}) [${status}]`);
+  }
+
+  // Write marker on every run. Orchestrator uses .failures.length > 0 to decide
+  // whether ingestion aborted; .counts/.thresholds drive the healthy-run table.
+  try {
+    fs.writeFileSync(SOURCE_HEALTH_MARKER, JSON.stringify({
+      counts: sourceCountsForMarker,
+      thresholds: { ...SOURCE_THRESHOLDS },
+      failures: sourceFailures,
+    }, null, 2));
+  } catch (err) {
+    console.error(`   Marker write failed: ${err.message}`);
+  }
+
+  if (sourceFailures.length > 0) {
+    // Stdout sentinel — belt-and-suspenders if marker write fails (rare but possible).
+    const sentinel = sourceFailures.map(f => `${f.source}=${f.rowCount}/${f.threshold}`).join(" ");
+    console.error(`\n[SOURCE-HEALTH-FAIL] ${sentinel}`);
+    console.error(`\n   ABORT: ${sourceFailures.length} source(s) below threshold. Skipping DB writes to preserve existing data.`);
+    console.error("   Re-run after the failing source(s) recover.");
+    process.exit(1);
+  }
 
   // Fetch model card data: try DB first, fall back to hardcoded
   console.log("\n2. Merging data and computing cumulative best...");

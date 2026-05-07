@@ -930,6 +930,16 @@ async function main() {
   const allExtracted = [];
   const hfDiscoveryFailures = []; // { source, reason } — surfaces in marker file
 
+  // Per-lab counters for the streak alert in run-pipeline.mjs.
+  // articlesScraped: page extraction succeeded (regardless of LLM yield).
+  // scoresYielded:   triage emitted at least one ingestable score.
+  const pipelineStats = {};
+  for (const source of LAB_SOURCES) {
+    if (!pipelineStats[source.lab]) {
+      pipelineStats[source.lab] = { articlesScraped: 0, scoresYielded: 0 };
+    }
+  }
+
   // ─── Step 1: Discover articles ─────────────────────────────
 
   if (SINGLE_URL) {
@@ -1136,6 +1146,9 @@ async function main() {
         try {
           const { scores, publishDate } = await extractFromHfReadme(anthropic, article);
           allExtracted.push({ article, scores, publishDate });
+          if (pipelineStats[article.source.lab]) {
+            pipelineStats[article.source.lab].articlesScraped++;
+          }
         } catch (err) {
           console.error(`   FAILED: ${article.title}: ${err.message.substring(0, 200)}`);
           allExtracted.push({ article, scores: [], publishDate: null });
@@ -1187,6 +1200,9 @@ async function main() {
           articlePage, anthropic, article.url, article.modelName, cutoff
         );
         allExtracted.push({ article, scores, publishDate, skippedOld });
+        if (pipelineStats[article.source.lab]) {
+          pipelineStats[article.source.lab].articlesScraped++;
+        }
       } catch (err) {
         console.error(`   FAILED: ${article.title}: ${err.message.substring(0, 200)}`);
         allExtracted.push({ article, scores: [], publishDate: null });
@@ -1352,6 +1368,9 @@ async function main() {
       if (result.action === "ingest") {
         ingested.push({ ...row, triageResult: result });
         console.log(`   INGEST: ${summary}`);
+        if (pipelineStats[row.lab]) {
+          pipelineStats[row.lab].scoresYielded++;
+        }
       } else if (result.action === "review") {
         flagged.push({ ...row, triageResult: result, rawBenchmark: row.raw_benchmark_name });
         console.log(`   FLAG:   ${summary}`);
@@ -1550,6 +1569,34 @@ async function main() {
   }
   console.log("");
 
+  // ─── Pipeline run stats ─────────────────────────────────────
+  // Write per-lab stats to pipeline_runs for the streak-alert query.
+  // Only when invoked by the orchestrator (PIPELINE_RUN_STARTED_AT set) — standalone
+  // debug runs (e.g., `node extract-model-cards.mjs --lab=chinese`) must not pollute
+  // the streak history.
+  const runStartIso = process.env.PIPELINE_RUN_STARTED_AT;
+  if (runStartIso && supabase && !DRY_RUN) {
+    const runRows = Object.entries(pipelineStats).map(([lab, s]) => ({
+      run_started_at: runStartIso,
+      lab,
+      articles_scraped: s.articlesScraped,
+      scores_yielded: s.scoresYielded,
+    }));
+    if (runRows.length > 0) {
+      const { error } = await supabase
+        .from("pipeline_runs")
+        .upsert(runRows, { onConflict: "run_started_at,lab" });
+      if (error) {
+        // Don't fail the run on telemetry write failure — log and continue.
+        console.warn(`   Warning: pipeline_runs upsert failed: ${error.message}`);
+      } else {
+        console.log(`   Wrote ${runRows.length} row(s) to pipeline_runs.`);
+      }
+    }
+  } else if (!runStartIso) {
+    console.log("   Skipping pipeline_runs upsert (PIPELINE_RUN_STARTED_AT not set; standalone run).");
+  }
+
   // Marker for the orchestrator: clean exit. Absence of this file = subprocess crashed.
   writeMarker(MARKER_COMPLETE, {
     articlesProcessed: allExtracted.length,
@@ -1557,6 +1604,7 @@ async function main() {
     browserbaseSkipped: browserbaseSkipped.length,
     browserbaseUnavailable,
     hfDiscoveryFailures: hfDiscoveryFailures.length,
+    pipelineStats,
   });
 }
 

@@ -17,7 +17,7 @@ import { fileURLToPath } from "url";
 
 const require = createRequire(import.meta.url);
 const { BENCHMARK_META, LABS, LAB_KEYS, TIME_LABELS, compareQuarters, getPresets } = require("../lib/config.js");
-const { isHarnessVariant, isAcknowledgedConfigVariant, normalizeVariant, shouldRegenerateAnalyses } = require("../lib/pipeline.js");
+const { isHarnessVariant, isAcknowledgedConfigVariant, normalizeVariant, shouldRegenerateAnalyses, detectStreakAlerts } = require("../lib/pipeline.js");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,6 +58,7 @@ const MARKER_STARTED = path.join(MARKER_DIR, "ai-race-extraction-started.json");
 const MARKER_COMPLETE = path.join(MARKER_DIR, "ai-race-extraction-complete.json");
 const MARKER_BB_SKIP = path.join(MARKER_DIR, "ai-race-browserbase-skip.json");
 const MARKER_HF_DISCOVERY_FAIL = path.join(MARKER_DIR, "ai-race-hf-discovery-fail.json");
+const MARKER_SOURCE_HEALTH = path.join(MARKER_DIR, "ai-race-source-health.json");
 
 function readMarker(filePath) {
   try { return JSON.parse(fs.readFileSync(filePath, "utf8")); }
@@ -317,6 +318,34 @@ async function queryLabFreshness(supabase) {
 }
 
 /**
+ * Fetch per-lab pipeline_runs history (most recent N rows per lab) and
+ * delegate to detectStreakAlerts in lib/pipeline.js for the pure detection
+ * logic. Splitting fetch from detection keeps the streak rules unit-testable.
+ */
+async function queryStreakAlerts(supabase) {
+  const STREAK_THRESHOLD = 4;
+
+  const queries = EXTRACTED_LABS.map(async (lab) => {
+    const { data, error } = await supabase
+      .from("pipeline_runs")
+      .select("articles_scraped, scores_yielded, run_started_at")
+      .eq("lab", lab)
+      .order("run_started_at", { ascending: false })
+      .limit(STREAK_THRESHOLD);
+
+    if (error) {
+      // Don't crash the report on a missing table (pre-migration runs); log and skip.
+      console.warn(`  Warning: streak query failed for ${lab}: ${error.message}`);
+      return [lab, []];
+    }
+    return [lab, data || []];
+  });
+
+  const historyByLab = Object.fromEntries(await Promise.all(queries));
+  return detectStreakAlerts(historyByLab, { streakThreshold: STREAK_THRESHOLD });
+}
+
+/**
  * Post-ingestion health check: verify benchmark_scores has data for each automated benchmark.
  */
 async function healthCheck(supabase) {
@@ -371,8 +400,11 @@ function sourceName(key) {
 /**
  * Build the combined GitHub issue report.
  */
-function buildReport({ changes, flagged, rejected, unknownVariants, extractResult, ingestResult, labFreshness, runDate, regen, extractionCrashed, browserbaseSkipped, hfDiscoveryFailures }) {
+function buildReport({ changes, flagged, rejected, unknownVariants, extractResult, ingestResult, labFreshness, runDate, regen, extractionCrashed, browserbaseSkipped, hfDiscoveryFailures, sourceHealth, streak }) {
   const parts = [];
+
+  const sourceHealthFailures = (sourceHealth && sourceHealth.failures) || [];
+  const hasSourceHealthFailure = sourceHealthFailures.length > 0;
 
   // ─── Header ─────────────────────────────────────────────
   let extractStatus;
@@ -381,7 +413,9 @@ function buildReport({ changes, flagged, rejected, unknownVariants, extractResul
   else if (extractResult.code === 0) extractStatus = "OK";
   else extractStatus = `FAILED (exit ${extractResult.code})`;
 
-  const ingestStatus = ingestResult.code === 0 ? "OK" : `FAILED (exit ${ingestResult.code})`;
+  let ingestStatus;
+  if (hasSourceHealthFailure) ingestStatus = "ABORTED (source health)";
+  else ingestStatus = ingestResult.code === 0 ? "OK" : `FAILED (exit ${ingestResult.code})`;
 
   parts.push(`## Pipeline Run (${runDate})`);
   parts.push(`Extraction: ${extractStatus} | Ingestion: ${ingestStatus}`);
@@ -389,6 +423,40 @@ function buildReport({ changes, flagged, rejected, unknownVariants, extractResul
     parts.push(`Analyses regeneration: ${regen.shouldRegen ? "queued" : "skipped"} — ${regen.reason}`);
   }
   parts.push("");
+
+  // ─── Source Health (always rendered when marker was written) ─
+  if (sourceHealth && sourceHealth.counts && Object.keys(sourceHealth.counts).length > 0) {
+    if (hasSourceHealthFailure) {
+      parts.push(`## Source Health Failure (${sourceHealthFailures.length})`);
+      parts.push("Ingestion aborted before any DB writes. **Existing data is preserved** — the site continues to display last-good scores.");
+      parts.push("");
+      parts.push("The following source(s) returned suspiciously empty data, suggesting a URL change, API outage, or DOM restructure:");
+      parts.push("");
+      parts.push("| Source | Rows returned | Minimum expected | Status |");
+      parts.push("|--------|---------------|------------------|--------|");
+      for (const source of Object.keys(sourceHealth.counts)) {
+        const count = sourceHealth.counts[source];
+        const threshold = sourceHealth.thresholds?.[source] ?? "—";
+        const status = count < (threshold || 0) ? "**FAIL**" : "ok";
+        parts.push(`| \`${source}\` | ${count} | ${threshold} | ${status} |`);
+      }
+      parts.push("");
+      parts.push("**Next steps**: investigate the failing source(s), fix the fetcher in `scripts/update-data.js`, and re-run the pipeline. If a source has legitimately shrunk, lower its threshold in `SOURCE_THRESHOLDS`.");
+      parts.push("");
+    } else {
+      parts.push("## Source Health");
+      parts.push("Per-source row counts this run. Watch for sources trending toward their threshold — that's the early warning before a real abort.");
+      parts.push("");
+      parts.push("| Source | Rows returned | Minimum expected |");
+      parts.push("|--------|---------------|------------------|");
+      for (const source of Object.keys(sourceHealth.counts)) {
+        const count = sourceHealth.counts[source];
+        const threshold = sourceHealth.thresholds?.[source] ?? "—";
+        parts.push(`| \`${source}\` | ${count} | ${threshold} |`);
+      }
+      parts.push("");
+    }
+  }
 
   // ─── Extraction issues (crash or Browserbase unavailability) ─
   if (extractionCrashed) {
@@ -513,6 +581,10 @@ function buildReport({ changes, flagged, rejected, unknownVariants, extractResul
 
   // ─── Lab Freshness ──────────────────────────────────────
   const staleLabs = labFreshness.filter(l => l.stale);
+  const streakAlerts = (streak && streak.alerts) || [];
+  const insufficientHistory = (streak && streak.insufficientHistory) || [];
+  // Flatten insufficient-history into a lookup so we can render it inline.
+  const insufficientByLab = new Map(insufficientHistory.map(h => [h.lab, h.runsSoFar]));
 
   parts.push("");
   parts.push("## Lab Freshness");
@@ -521,8 +593,29 @@ function buildReport({ changes, flagged, rejected, unknownVariants, extractResul
   parts.push("|-----|----------------|--------|");
   for (const l of labFreshness) {
     const date = l.lastExtraction ? l.lastExtraction.split("T")[0] : "Never";
-    const status = l.stale ? `Stale (>${STALENESS_WEEKS} weeks)` : "OK";
+    let status;
+    if (l.stale) status = `Stale (>${STALENESS_WEEKS} weeks)`;
+    else if (insufficientByLab.has(l.lab)) status = `Insufficient streak history (${insufficientByLab.get(l.lab)}/4 runs)`;
+    else status = "OK";
     parts.push(`| ${labName(l.lab)} | ${date} | ${status} |`);
+  }
+
+  // ─── Streak Alerts ──────────────────────────────────────
+  if (streakAlerts.length > 0) {
+    parts.push("");
+    parts.push(`## Streak Alerts (${streakAlerts.length})`);
+    parts.push("");
+    parts.push("Labs that have shown the same failure pattern for 4 consecutive runs. Usually indicates the index scanner / scraper / extraction prompt has broken silently.");
+    parts.push("");
+    parts.push("| Lab | Kind | Since |");
+    parts.push("|-----|------|-------|");
+    for (const a of streakAlerts) {
+      const kindLabel = a.kind === "no_articles"
+        ? "No articles scraped — index scanner / scraper broken"
+        : "Articles scraped, no scores yielded — extraction prompt or page template drift";
+      const sinceDate = a.since ? a.since.split("T")[0] : "unknown";
+      parts.push(`| ${labName(a.lab)} | ${kindLabel} | ${sinceDate} |`);
+    }
   }
 
   parts.push("");
@@ -534,7 +627,10 @@ function buildReport({ changes, flagged, rejected, unknownVariants, extractResul
   const reviewCount = totalFlagged;
 
   let title;
-  if (scoreCount > 0 && reviewCount > 0) {
+  if (hasSourceHealthFailure) {
+    const n = sourceHealthFailures.length;
+    title = `[Pipeline] ${runDate}: FAILED — ${n} source${n !== 1 ? "s" : ""} below threshold`;
+  } else if (scoreCount > 0 && reviewCount > 0) {
     title = `[Pipeline] ${runDate}: ${scoreCount} new score${scoreCount !== 1 ? "s" : ""}, ${reviewCount} need review`;
   } else if (scoreCount > 0) {
     title = `[Pipeline] ${runDate}: ${scoreCount} new score${scoreCount !== 1 ? "s" : ""}`;
@@ -543,9 +639,15 @@ function buildReport({ changes, flagged, rejected, unknownVariants, extractResul
   } else {
     title = `[Pipeline] ${runDate}: No changes`;
   }
+  if (streakAlerts.length > 0 && !hasSourceHealthFailure) {
+    title += ` + ${streakAlerts.length} streak alert${streakAlerts.length !== 1 ? "s" : ""}`;
+  }
 
-  const needsReview = totalFlagged > 0 || staleLabs.length > 0;
-  const labels = needsReview ? "pipeline-report,needs-review" : "pipeline-report";
+  const labelSet = new Set(["pipeline-report"]);
+  if (totalFlagged > 0 || staleLabs.length > 0) labelSet.add("needs-review");
+  if (hasSourceHealthFailure) labelSet.add("pipeline-failure");
+  if (streakAlerts.length > 0) labelSet.add("pipeline-alert");
+  const labels = [...labelSet].join(",");
 
   return { title, body: parts.join("\n"), labels };
 }
@@ -579,6 +681,10 @@ async function main() {
   const runStartTime = new Date();
   const runDate = runStartTime.toISOString().split("T")[0];
 
+  // Propagate run start time to subprocesses (extraction reads this to write
+  // pipeline_runs rows aligned with the orchestrator's run boundary).
+  process.env.PIPELINE_RUN_STARTED_AT = runStartTime.toISOString();
+
   console.log(`\nPipeline run: ${runDate}${DRY_RUN ? " (dry run)" : ""}`);
 
   if (!SUPABASE_SERVICE_KEY) {
@@ -608,6 +714,7 @@ async function main() {
     unlinkMarker(MARKER_COMPLETE);
     unlinkMarker(MARKER_BB_SKIP);
     unlinkMarker(MARKER_HF_DISCOVERY_FAIL);
+    unlinkMarker(MARKER_SOURCE_HEALTH);
 
     const extractArgs = ["--no-report"];
     if (DRY_RUN) extractArgs.push("--dry-run");
@@ -650,6 +757,8 @@ async function main() {
 
   // ─── Step 3: Run ingestion ──────────────────────────────
   let ingestResult;
+  let sourceHealth = null; // { counts, thresholds, failures } — populated from marker on every run
+  let sourceHealthAborted = false; // true only when failures exist (ingestion intentionally aborted)
 
   if (DRY_RUN) {
     console.log("\nStep 3: Ingestion skipped (dry run)");
@@ -661,21 +770,51 @@ async function main() {
       "Step 3: Ingestion"
     );
 
+    // Marker is written on every run with counts + thresholds + failures.
+    // Stdout sentinel is the fallback only if the marker write itself failed.
+    const sourceHealthMarker = readMarker(MARKER_SOURCE_HEALTH);
+    if (sourceHealthMarker) {
+      sourceHealth = sourceHealthMarker;
+    } else if (ingestResult.code !== 0 && /\[SOURCE-HEALTH-FAIL\]/.test(ingestResult.stderr || "")) {
+      const match = (ingestResult.stderr || "").match(/\[SOURCE-HEALTH-FAIL\] (.+)/);
+      if (match) {
+        const failures = match[1].trim().split(/\s+/).map(token => {
+          const [source, ratio] = token.split("=");
+          const [rowCount, threshold] = (ratio || "").split("/").map(Number);
+          return { source, rowCount, threshold };
+        }).filter(f => f.source);
+        sourceHealth = { counts: {}, thresholds: {}, failures };
+        console.warn(`  Recovered source-health failures from stdout sentinel (marker write may have failed).`);
+      }
+    }
+    unlinkMarker(MARKER_SOURCE_HEALTH);
+
+    sourceHealthAborted = !!(sourceHealth && sourceHealth.failures && sourceHealth.failures.length > 0);
+
     if (ingestResult.code !== 0) {
-      console.error("\n  Error: Ingestion failed. Data may be inconsistent.");
-      process.exit(1);
+      if (sourceHealthAborted) {
+        console.warn(`\n  Source health: ${sourceHealth.failures.length} source(s) below threshold. Ingestion aborted intentionally; existing data preserved.`);
+        // Continue to report posting; downstream steps gate on sourceHealthAborted.
+      } else {
+        console.error("\n  Error: Ingestion failed unexpectedly. Aborting.");
+        process.exit(1);
+      }
     }
   }
 
   // ─── Step 4: Post-ingestion health check ────────────────
-  console.log("\nStep 4: Health check...");
-  const healthFailures = await healthCheck(supabase);
+  if (sourceHealthAborted) {
+    console.log("\nStep 4: Health check skipped (source-health abort — ingestion did not write).");
+  } else {
+    console.log("\nStep 4: Health check...");
+    const healthFailures = await healthCheck(supabase);
 
-  if (healthFailures.length > 0) {
-    console.error(`  Health check FAILED:\n    ${healthFailures.join("\n    ")}`);
-    process.exit(1);
+    if (healthFailures.length > 0) {
+      console.error(`  Health check FAILED:\n    ${healthFailures.join("\n    ")}`);
+      process.exit(1);
+    }
+    console.log("  Health check passed.");
   }
-  console.log("  Health check passed.");
 
   // ─── Step 5: Diff scores ───────────────────────────────
   console.log("\nStep 5: Diffing scores...");
@@ -694,24 +833,30 @@ async function main() {
   console.log(`  ${costChangeCount} cost intelligence change${costChangeCount !== 1 ? "s" : ""} detected.`);
 
   // ─── Step 5.5: Compute analyses-regen gate ──────────────
-  console.log("\nStep 5.5: Computing analyses-regen gate...");
-  const { data: cachedRows, error: cachedErr } = await supabase
-    .from("cached_analyses")
-    .select("date_range, end_quarter, generated_at");
-  if (cachedErr) {
-    console.warn(`  Warning: cached_analyses query failed (${cachedErr.message}). Defaulting to regen.`);
+  let regen;
+  if (sourceHealthAborted) {
+    regen = { shouldRegen: false, reason: "source-health abort: no score changes possible" };
+    console.log(`\nStep 5.5: Analyses regen skipped (${regen.reason})`);
+  } else {
+    console.log("\nStep 5.5: Computing analyses-regen gate...");
+    const { data: cachedRows, error: cachedErr } = await supabase
+      .from("cached_analyses")
+      .select("date_range, end_quarter, generated_at");
+    if (cachedErr) {
+      console.warn(`  Warning: cached_analyses query failed (${cachedErr.message}). Defaulting to regen.`);
+    }
+    regen = cachedErr
+      ? { shouldRegen: true, reason: `cached_analyses query error: ${cachedErr.message}` }
+      : shouldRegenerateAnalyses({
+          changeCount: changes.length,
+          costChangeCount,
+          cachedRows: cachedRows || [],
+          expectedPresets: getPresets(),
+          currentQuarter: TIME_LABELS[TIME_LABELS.length - 1],
+          compareQuarters,
+        });
+    console.log(`  Analyses regen: ${regen.shouldRegen ? "queued" : "skipped"} (${regen.reason})`);
   }
-  const regen = cachedErr
-    ? { shouldRegen: true, reason: `cached_analyses query error: ${cachedErr.message}` }
-    : shouldRegenerateAnalyses({
-        changeCount: changes.length,
-        costChangeCount,
-        cachedRows: cachedRows || [],
-        expectedPresets: getPresets(),
-        currentQuarter: TIME_LABELS[TIME_LABELS.length - 1],
-        compareQuarters,
-      });
-  console.log(`  Analyses regen: ${regen.shouldRegen ? "queued" : "skipped"} (${regen.reason})`);
 
   if (process.env.GITHUB_OUTPUT) {
     try {
@@ -721,12 +866,16 @@ async function main() {
     }
   }
 
-  // ─── Step 6: Query flagged, rejected, variants, and freshness ─────
-  console.log("\nStep 6: Querying flagged, rejected, unknown variants, and lab freshness...");
+  // ─── Step 6: Query flagged, rejected, variants, freshness, streak ──
+  // These run regardless of ingestion outcome — they're cheap and independent
+  // of ingestion success, so a source-health abort week still surfaces flagged
+  // items and streak alerts that need attention.
+  console.log("\nStep 6: Querying flagged, rejected, variants, freshness, streak...");
   const flagged = await queryFlaggedItems(supabase, runStartTime);
   const rejected = await queryRejectedItems(supabase, runStartTime);
   const unknownVariants = await queryUnknownVariants(supabase);
   const labFreshness = await queryLabFreshness(supabase);
+  const streak = await queryStreakAlerts(supabase);
   console.log(`  Flagged: ${flagged.newItems.length} new, ${flagged.carriedOver.length} carried over`);
   console.log(`  Rejected: ${rejected.length} this run`);
   console.log(`  Unknown variants needing review: ${unknownVariants.length}`);
@@ -735,6 +884,12 @@ async function main() {
     console.warn(`  Stale labs: ${staleLabs.map(l => labName(l.lab)).join(", ")}`);
   } else {
     console.log(`  All ${labFreshness.length} labs have fresh data`);
+  }
+  if (streak.alerts.length > 0) {
+    console.warn(`  Streak alerts: ${streak.alerts.map(a => `${labName(a.lab)} (${a.kind})`).join(", ")}`);
+  }
+  if (streak.insufficientHistory.length > 0) {
+    console.log(`  Insufficient history: ${streak.insufficientHistory.map(h => `${labName(h.lab)} (${h.runsSoFar}/4)`).join(", ")}`);
   }
 
   // ─── Step 7: Build and post report ──────────────────────
@@ -752,6 +907,8 @@ async function main() {
     extractionCrashed,
     browserbaseSkipped,
     hfDiscoveryFailures,
+    sourceHealth,
+    streak,
   });
 
   console.log(`  Title: ${report.title}`);
