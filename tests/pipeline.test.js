@@ -142,6 +142,14 @@ describe("arcModelIdToLab", () => {
     expect(arcModelIdToLab("llama-3-70b")).toBeNull();
     expect(arcModelIdToLab("")).toBeNull();
   });
+
+  it("matches ARC v3 canonical lab-prefix naming", () => {
+    // ARC-AGI-3 leaderboard uses "<lab>-<model>-<version>-<detail>" format.
+    expect(arcModelIdToLab("anthropic-opus-4-7-high")).toBe("anthropic");
+    expect(arcModelIdToLab("openai-gpt-5-5-2026-04-23-high")).toBe("openai");
+    expect(arcModelIdToLab("google-gemini-3-1-pro-preview")).toBe("google");
+    expect(arcModelIdToLab("xai-grok-4-20-beta-0309-reasoning")).toBe("xai");
+  });
 });
 
 // ─── modelNameToLab ──────────────────────────────────────────

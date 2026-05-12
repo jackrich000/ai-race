@@ -20,11 +20,13 @@ const BENCHMARK_SOURCE_MAP = {
   "aime":          "Epoch AI",
   "arc-agi-1":     "ARC Prize",
   "arc-agi-2":     "ARC Prize",
+  "arc-agi-3":     "ARC Prize",
   "hle":           "Artificial Analysis",
   "swe-bench-verified": "SWE-bench",
   "swe-bench-pro": "Scale AI SEAL",
   "frontiermath":  "Epoch AI",
   "math-l5":       "Epoch AI",
+  "osworld-verified": "Epoch AI",
 };
 
 const COST_SOURCE = "Artificial Analysis";
@@ -83,6 +85,7 @@ const BENCHMARK_COLORS = {
   "swe-bench-verified": "#10b981",
   "arc-agi-1":     "#f59e0b",
   "arc-agi-2":     "#f97316",
+  "arc-agi-3":     "#c084fc",
   "hle":           "#8b5cf6",
   "gpqa":          "#06b6d4",
   "aime":          "#ef4444",
@@ -90,6 +93,7 @@ const BENCHMARK_COLORS = {
   "humaneval":     "#6ee7b7",
   "frontiermath":  "#f472b6",
   "math-l5":       "#fb7185",
+  "osworld-verified": "#fbbf24",
 };
 
 // Colors for cost benchmarks
@@ -499,7 +503,7 @@ function buildFrontierDatasets() {
       pointHoverBackgroundColor: isInactive ? INACTIVE_COLOR : color,
       tension: 0.3,
       spanGaps: true,
-      order: isInactive ? 1 : 0, // inactive lines render behind active
+      order: isInactive ? 1 : 0, // higher order draws first → behind; active stays on top
     };
 
     if (isInactive) {
@@ -517,52 +521,50 @@ function buildDatasets() {
 }
 
 // ─── Inactivity marker plugin ────────────────────────────────
+// Renders per-dataset in afterDatasetDraw so the marker sits with its inactive line
+// in z-order — active lines drawn later (lower `order` value) cover it where they
+// cross, and tooltips drawn afterwards render on top. Previously used afterDraw, which
+// put the marker above every dataset and every tooltip.
 const inactivityMarkerPlugin = {
   id: "inactivityMarker",
-  afterDraw(chart) {
+  afterDatasetDraw(chart, args) {
     if (currentMode !== "frontier") return;
+    const ds = chart.data.datasets[args.index];
+    if (!ds._isInactive || !ds._activeUntil) return;
+    if (!chart.isDatasetVisible(args.index)) return;
+
+    const qIdx = TIME_LABELS.indexOf(ds._activeUntil);
+    if (qIdx < 0) return;
+    if (ds.data[qIdx] == null) return;
+
+    const meta = chart.getDatasetMeta(args.index);
+    const point = meta.data[qIdx];
+    if (!point || point.skip) return;
+
     const ctx = chart.ctx;
+    const x = point.x;
+    const y = point.y;
 
-    chart.data.datasets.forEach((ds, i) => {
-      if (!ds._isInactive || !ds._activeUntil) return;
-      if (!chart.isDatasetVisible(i)) return;
+    const r = 6;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = "#1a1d27";
+    ctx.fill();
+    ctx.strokeStyle = INACTIVE_COLOR;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
 
-      const qIdx = TIME_LABELS.indexOf(ds._activeUntil);
-      if (qIdx < 0) return;
-
-      // Skip if no data at this point (null value = no marker to draw)
-      if (ds.data[qIdx] == null) return;
-
-      const meta = chart.getDatasetMeta(i);
-      const point = meta.data[qIdx];
-      if (!point || point.skip) return;
-
-      const x = point.x;
-      const y = point.y;
-
-      // Draw a small circle with an x
-      const r = 6;
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fillStyle = "#1a1d27";
-      ctx.fill();
-      ctx.strokeStyle = INACTIVE_COLOR;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      // Draw the x
-      const xr = 2.5;
-      ctx.beginPath();
-      ctx.moveTo(x - xr, y - xr);
-      ctx.lineTo(x + xr, y + xr);
-      ctx.moveTo(x + xr, y - xr);
-      ctx.lineTo(x - xr, y + xr);
-      ctx.strokeStyle = INACTIVE_COLOR;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      ctx.restore();
-    });
+    const xr = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(x - xr, y - xr);
+    ctx.lineTo(x + xr, y + xr);
+    ctx.moveTo(x + xr, y - xr);
+    ctx.lineTo(x - xr, y + xr);
+    ctx.strokeStyle = INACTIVE_COLOR;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
   },
 };
 
@@ -686,6 +688,13 @@ function renderChart() {
           line += ` (${modelLabel}, ${labName})`;
         } else if (modelLabel) {
           line += ` (${modelLabel})`;
+        }
+        // OSWorld-Verified absorbed the original OSWorld timeline; mark pre-Q3 2025
+        // points so readers know that section of the line is original-OSWorld data.
+        const benchKey = context.dataset._benchKey;
+        const quarter = TIME_LABELS[context.dataIndex];
+        if (benchKey === "osworld-verified" && quarter && compareQuarters(quarter, "Q3 2025") < 0) {
+          line += ` · Original OSWorld`;
         }
         const isVerified = context.dataset._verified?.[context.dataIndex] !== false;
         const rawSource = context.dataset._source?.[context.dataIndex];
