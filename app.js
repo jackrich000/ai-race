@@ -20,11 +20,13 @@ const BENCHMARK_SOURCE_MAP = {
   "aime":          "Epoch AI",
   "arc-agi-1":     "ARC Prize",
   "arc-agi-2":     "ARC Prize",
+  "arc-agi-3":     "ARC Prize",
   "hle":           "Artificial Analysis",
   "swe-bench-verified": "SWE-bench",
   "swe-bench-pro": "Scale AI SEAL",
   "frontiermath":  "Epoch AI",
   "math-l5":       "Epoch AI",
+  "osworld-verified": "Epoch AI",
 };
 
 const COST_SOURCE = "Artificial Analysis";
@@ -83,6 +85,7 @@ const BENCHMARK_COLORS = {
   "swe-bench-verified": "#10b981",
   "arc-agi-1":     "#f59e0b",
   "arc-agi-2":     "#f97316",
+  "arc-agi-3":     "#c084fc",
   "hle":           "#8b5cf6",
   "gpqa":          "#06b6d4",
   "aime":          "#ef4444",
@@ -90,6 +93,7 @@ const BENCHMARK_COLORS = {
   "humaneval":     "#6ee7b7",
   "frontiermath":  "#f472b6",
   "math-l5":       "#fb7185",
+  "osworld-verified": "#fbbf24",
 };
 
 // Colors for cost benchmarks

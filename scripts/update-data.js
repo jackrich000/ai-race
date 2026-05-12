@@ -61,10 +61,12 @@ function quarterMidDate(quarter) {
 // Earliest valid quarter per benchmark (scores before this are nulled out).
 // Prevents retroactive evaluations from appearing before a benchmark existed.
 const BENCHMARK_START_QUARTER = {
-  "hle":           "Q1 2025",  // Released January 2025
-  "gpqa":          "Q4 2023",  // Published November 2023
-  "arc-agi-2":     "Q1 2025",  // Released as part of ARC Prize 2025
-  "swe-bench-pro": "Q3 2025",  // Scale AI SEAL leaderboard launched
+  "hle":              "Q1 2025",  // Released January 2025
+  "gpqa":             "Q4 2023",  // Published November 2023
+  "arc-agi-2":        "Q1 2025",  // Released as part of ARC Prize 2025
+  "arc-agi-3":        "Q1 2026",  // Released as part of ARC Prize 2026
+  "swe-bench-pro":    "Q3 2025",  // Scale AI SEAL leaderboard launched
+  "osworld-verified": "Q3 2024",  // Original OSWorld launched Q2 2024; first frontier-lab scores Q3 2024
 };
 
 // Cost of Intelligence: benchmarks with price thresholds
@@ -82,6 +84,7 @@ const EPOCH_BENCHMARK_FILES = {
   "swe_bench_verified.csv":       { key: "swe-bench-verified", scoreCol: "mean_score" },
   "frontiermath.csv":             { key: "frontiermath", scoreCol: "mean_score" },
   "math_level_5.csv":             { key: "math-l5",      scoreCol: "mean_score" },
+  "os_world_external.csv":        { key: "osworld-verified", scoreCol: "Score" },
 };
 
 // Source-level abort thresholds. If a fetcher returns fewer rows than its threshold,
@@ -425,6 +428,7 @@ async function fetchARCPrize() {
   const datasetMap = {
     "v1_Semi_Private": "arc-agi-1",
     "v2_Semi_Private": "arc-agi-2",
+    "v3_Semi_Private": "arc-agi-3",
   };
 
   for (const entry of evaluations) {
@@ -858,7 +862,7 @@ async function main() {
   }
 
   // Automated benchmarks managed by this script. Manual seeds (humaneval) are excluded.
-  const automatedBenchmarks = ["swe-bench-verified", "arc-agi-1", "arc-agi-2", "hle", "gpqa", "aime", "frontiermath", "math-l5", "swe-bench-pro"];
+  const automatedBenchmarks = ["swe-bench-verified", "arc-agi-1", "arc-agi-2", "arc-agi-3", "hle", "gpqa", "aime", "frontiermath", "math-l5", "swe-bench-pro", "osworld-verified"];
 
   // Compute cumulative best per (benchmark, lab) and build upsert rows
   const allRows = [];

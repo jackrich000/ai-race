@@ -84,15 +84,27 @@ describe("isBenchmarkActive", () => {
 
 describe("BENCHMARK_META", () => {
   const expectedKeys = [
-    "gpqa", "arc-agi-2", "hle", "swe-bench-pro", "aime", "frontiermath",
+    "gpqa", "arc-agi-2", "arc-agi-3", "hle", "swe-bench-pro", "aime", "frontiermath",
+    "osworld-verified",
     "humaneval", "arc-agi-1", "swe-bench-verified", "math-l5",
   ];
 
-  it("has all 10 expected benchmark keys", () => {
+  it("has all 12 expected benchmark keys", () => {
     for (const key of expectedKeys) {
       expect(BENCHMARK_META).toHaveProperty(key);
     }
-    expect(Object.keys(BENCHMARK_META)).toHaveLength(10);
+    expect(Object.keys(BENCHMARK_META)).toHaveLength(12);
+  });
+
+  it("arc-agi-3 is active and in Reasoning category", () => {
+    expect(BENCHMARK_META["arc-agi-3"].status).toBe("active");
+    expect(BENCHMARK_META["arc-agi-3"].category).toBe("Reasoning");
+  });
+
+  it("osworld-verified is active and explicitly notes lab-coverage gaps in its description", () => {
+    expect(BENCHMARK_META["osworld-verified"].status).toBe("active");
+    // Methodology must disclose missing labs so users don't read silence as poor performance.
+    expect(BENCHMARK_META["osworld-verified"].description).toMatch(/Google.*xAI.*Meta|xAI.*Meta.*Google|Meta.*Google.*xAI/);
   });
 
   it("each benchmark has required fields", () => {
