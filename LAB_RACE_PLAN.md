@@ -69,8 +69,7 @@ The "drill-down = many races" half needs its own format decision in the next ses
 ## Upstream dependencies (must be resolved or known-state before Lab Race work)
 
 - **Capability taxonomy anchors finalized.** `project_capability_taxonomy.md` v1 still has Computer Use and Real-world Tasks anchors being finalized (per TASKS.md "Make the site work for non-technical audiences" item). Lab Race's bucket-first aggregation rests on the taxonomy being settled. Either confirm anchors before starting Lab Race, or design with a known-pending state and a way to swap later.
-- **Pace of Change production-integration status.** Pace's v3 scratch is built (`.scratch-pace-v3.html`); production integration is pending decisions on site placement and methodology copy. If Lab Race ships before Pace's production integration, it sets infrastructure precedent (capability-bucket schema, frontier calc, % of frontier helper) that Pace then has to conform to — or vice versa. Worth deciding ordering deliberately.
-- **`PACE_PLAN.md` is slightly stale.** During v3 work Pace shifted from median to mean and dropped MMLU full; the locked-decisions section in that file hasn't been rewritten. Treat it as a historical snapshot, not the current spec. TASKS.md line 24 has the more current summary.
+- **Pace of Change production-integration status.** Pace's v3 scratch is built (`.scratch-pace-v3.html`); production integration is pending decisions on site placement and methodology copy. If Lab Race ships before Pace's production integration, it sets infrastructure precedent (capability-bucket schema, frontier calc, % of frontier helper) that Pace then has to conform to — or vice versa. Worth deciding ordering deliberately. **Current Pace spec: `PACE_PLAN.md` (rewritten 2026-05-12 with session-2 findings — mean not median, 17 benchmarks, MMLU dropped, lifecycle + activity gate).**
 
 ## Out of scope for v1
 
