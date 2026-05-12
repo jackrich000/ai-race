@@ -18,9 +18,10 @@
   - **Non-percentage scoring benchmarks**: METR Time Horizons (minutes), Codeforces / LiveCodeBench Pro (Elo), GDPval. Requires a different chart type or normalization approach — site currently has no support for non-% benchmarks. Tied to whichever of these we decide to add.
   - **Review latest extracted model card data**: Survey what benchmarks labs are commonly self-reporting in `benchmark_raw` to identify candidates that would add coverage we don't have.
 - [ ] **Rethink aggregate view on Lab Race tab** — Hard to get a sense of who is really ahead when data is spread across 6 benchmark tabs. Need a way to show the overall picture.
-- [ ] **Make the site work for non-technical audiences**:
+- [-] **Make the site work for non-technical audiences**:
+  - **Capability taxonomy v1 agreed (2026-05-12)**: 8 buckets — Coding, Math, Science, Novel Problem Solving, Expert Reasoning, Computer Use, Real-world Tasks, Cost of Intelligence. Each capability anchored by a current best-in-class benchmark; saturated/superseded benchmarks become "previously" history. GPQA Diamond carries an explicit `(Saturated)` marker pending a successor. Computer Use + Real-world Tasks anchors (OSWorld, GDPVal) being finalised in a parallel session. Implementation TBD. Full rationale in `project_capability_taxonomy.md` + `project_capability_benchmark_principle.md`.
   - Better structure expanded benchmark descriptions in methodology section: clearly separate a) what the benchmark is from b) where we get the data
-  - Label benchmarks on the chart for context (e.g. "SWE-Bench Pro (Coding)") so unfamiliar visitors know what they're looking at
+  - Label benchmarks on the chart for context (e.g. "SWE-Bench Pro (Coding)") so unfamiliar visitors know what they're looking at — use taxonomy labels exactly
   - Sharpen the AI-generated analysis for non-technical / executive audiences. Manually extract the best insights from the data, then work backwards to tune the analysis prompt. What would you highlight presenting to a C-level audience? (e.g. not "ARC-AGI 2 scores increased" but "scores on the hardest benchmark for testing problem-solving capabilities increased...")
 - [ ] **Small UI fixes**:
   - Add "last updated" date to chart so visitors know how current the data is
