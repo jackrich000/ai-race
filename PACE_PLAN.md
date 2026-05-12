@@ -4,7 +4,7 @@ Battle-test a pace-of-change aggregate chart as a standalone scratch artifact. N
 
 ## Locked decisions (do not relitigate without strong cause)
 
-- **Metric**: median raw % point delta per quarter across the in-flight cohort. Equal-weight, no editorial weighting.
+- **Metric**: median raw % point delta per quarter across the in-flight cohort. Equal-weight, no editorial weighting. Median (not mean) chosen for defensibility — easier to deflect "you averaged 6 benchmarks and one outlier propped up the headline." After the median calculation was fixed during this session, mean and median tell similar stories most quarters but diverge in concentrated-progress quarters (e.g., Q1 2025: mean 8.77, median 3.7 — one big mover, most stalled). The median is the more honest signal for "is the typical benchmark moving."
 - **In-flight cohort definition**: benchmarks where `status == "active"` at quarter Q, OR `status == "saturated"` AND quarter <= `activeUntil`. Drop the previous 5-90% score gate entirely. Use the curated lifecycle fields, not a score threshold.
 - **Visualization**: smoothed 4Q median line (primary) + per-quarter median dots + faint strip underlay showing each individual benchmark's quarterly delta. Visible N per quarter. Tooltip lists contributing benchmarks.
 - **Data sourcing**: verified-primary (AA API, Epoch CSVs, official leaderboards). Fall back to model-card scores from `benchmark_raw` when verified hasn't caught up to a recent model release. Matches existing site logic.
@@ -59,6 +59,11 @@ For each new benchmark:
 4. Recency-lag measurement (compare verified vs model card for the most recent quarter).
 5. Validate lifecycle classification matches observed frontier curve. For MMLU full, find actual saturation quarter from data and update `activeUntil`.
 
+**MMMU-Pro-specific extra checks** (Jack expressed lingering skepticism in this session — AA Intelligence Index v4 explicitly separates multimodal; the data is available but treated as a different track):
+- Verify AA's MMMU-Pro update cadence: are new frontier model scores landing within ~4 weeks of release, or longer? If lag is materially worse than text benchmarks, flag.
+- Confirm earliest evaluation date on AA's leaderboard (the previous web fetch could not pin this down).
+- Compare MMMU-Pro frontier curve shape against text benchmarks — does multimodal progress move on a different cadence? If visible divergence, flag in Phase D for whether multimodal pace deserves its own slice rather than blending.
+
 Output: a quality table with pass/fail per check. Any benchmark failing >=2 checks gets flagged and decision deferred to Jack.
 
 ## Phase C — Chart regeneration
@@ -75,12 +80,19 @@ Output: a quality table with pass/fail per check. Any benchmark failing >=2 chec
 ## Phase D — Path-to-production analysis
 
 Assess after seeing v3 chart:
-1. Does expanded cohort tell a cleaner story? Is 2025 slowdown still visible?
-2. N stability: minimum N per quarter post-Q4 2024 should be >= 5, ideally >= 8.
-3. Outlier sensitivity: drop each new benchmark in turn, re-compute median, observe shift. If any single benchmark moves the line by >2 pts in any quarter, flag.
-4. Red team re-run: walk through earlier critiques (cohort survivorship, small N, climb-time endogeneity already cut). Which still land? Which are blunted?
-5. Production requirements list: pipeline integration, `BENCHMARK_META` updates in `lib/config.js`, chart component, methodology copy, site placement decision, engineering estimate.
-6. Verdict: ship/iterate/kill, with reasoning.
+1. Does expanded cohort tell a cleaner story? Is 2025 slowdown still visible? (Pre-expansion median: 2024 ~13.5, 2025 ~5.6, 2026 YTD ~8.65. The 2025 dip is the cleanest signal in the current data and should survive cohort expansion — if it doesn't, that's a finding worth surfacing.)
+2. **Lived-experience sanity check**: does the chart still align with Jack's subjective narrative? Q3-Q4 2024 should show the o1-era leap (~17 median across that period). 2025 should show a meaningful slowdown across most benchmarks. Q1 2026 should show recovery driven by Gemini 3 Deep Think (ARC-AGI-2 +30) and GPT-5.4 Pro (HLE +20). Q2 2026 should be modest, dominated by Mythos coding gains (SWE-bench Pro +20, SWE-bench Verified +12.5) and underwhelming GPT-5.5 reasoning gains. If the v3 chart disagrees with this calibrated story, investigate before trusting it.
+3. N stability: minimum N per quarter post-Q4 2024 should be >= 5, ideally >= 8.
+4. Outlier sensitivity: drop each new benchmark in turn, re-compute median, observe shift. If any single benchmark moves the line by >2 pts in any quarter, flag.
+5. **Red team checklist** (re-run against the v3 chart):
+   - **Cohort survivorship**: does expanding to ~17 benchmarks blunt the "you cherry-picked the active set" critique? Compare what the median looks like with rolling cohort (current proposal) vs hypothetical "every benchmark ever, including saturated ones" view.
+   - **Small N**: confirm N >= 5 from Q4 2024 onwards. If any quarter dips below, flag.
+   - **Contamination sensitivity**: separately compute the median including vs excluding contamination-prone benchmarks (HumanEval, MMLU full, MMLU-Pro). If the headline shifts materially, contamination is doing too much work.
+   - **Cumulative-max-across-labs artifact**: when does Meta entering the dataset (Q2 2026 with Muse Spark) visibly bump frontier? Is the bump real progress or just measurement bandwidth?
+   - **METR comparison defence**: prepare a one-paragraph response to "why should we believe this over METR's exponential?" The argument is "broad cohort across many capabilities, no single test dominates, METR's coding-heavy task slice is one of many measurements."
+   - **Already-resolved (don't re-litigate)**: climb-time endogeneity (cut from spec), error-reduction misinterpretation (cut from spec), single-quarter mean noise (resolved by smoothing).
+6. Production requirements list: pipeline integration, `BENCHMARK_META` updates in `lib/config.js`, chart component, methodology copy, site placement decision, engineering estimate. Note: methodology copy should borrow AA's HLE adversarial-selection disclosure pattern (AA explicitly notes HLE was curated against specific models, so direct comparison vs models not in curation is biased — same pattern applies to several of our benchmarks).
+7. **Verdict format**: a short markdown report (~500-800 words) covering: (a) does the v3 chart hold up under the red team checklist? (b) is the story still defensible? (c) ship/iterate/kill recommendation with concrete next steps for whichever path. Saved as `.scratch-pace-verdict.md`.
 
 ## Reference material in repo
 
@@ -108,4 +120,19 @@ Assess after seeing v3 chart:
 
 - True MMLU full saturation date (refine `activeUntil` after Phase A data check)
 - Whether AA Index v4 has Terminal-Bench Hard data that's compatible with Terminal-Bench 2.0 timeline (probably not, but check)
-- Whether Aider Polyglot scraping is sufficiently reliable for scratch v1
+- Whether Aider Polyglot scraping is sufficiently reliable for scratch v1 (single-maintainer source, may break)
+- MMMU-Pro update cadence and earliest evaluation date on AA's leaderboard (couldn't pin down in session web fetches; Phase B should verify)
+- Whether MMMU-Pro's multimodal curve diverges meaningfully from text benchmarks (if so, may need separate slice in v2)
+
+## Implementation pitfalls (real bugs encountered during this session)
+
+- **Median calculation for even N**: the naive `sorted[Math.floor(n/2)]` returns the upper-middle value, not the true median. For N=4 with sorted deltas [0, 4.3, 37.5, 40.1], naive median = 37.5, true median = (4.3+37.5)/2 = 20.9. The current `.scratch-pace.mjs` has a proper `quantile(sorted, q)` helper using linear interpolation — use that. The session conclusions were initially distorted by this bug; do not let future code regress.
+- **Supabase REST API in browser-flavoured UA**: returns "Forbidden use of secret API key in browser" with default PowerShell/Invoke-RestMethod. Set `User-Agent: node-fetch/1.0` (or any non-browser UA) in headers to bypass.
+- **PostgREST 1000-row limit**: the Supabase REST API caps at 1000 rows per request even when `limit=3000` is specified. Paginate via `offset=` for larger pulls.
+- **Hardcoded keys vs env vars**: this session's scratch script initially had a hardcoded Supabase key. GitHub push protection blocked the commit. Always use `process.env.SUPABASE_SERVICE_KEY` even in scratch scripts; the `.env` file is gitignored.
+
+## v2 references (for later, not now)
+
+- **GDPval Elo normalization**: AA uses `clamp((Elo - 500) / 2000)` (so Elo 500 = 0%, Elo 2500 = 100%, anchored to GPT-5.1 Non-Reasoning at Elo 1000). If/when non-% benchmarks join, this is the reference formula.
+- **AA Intelligence Index v4 components** (currently excluded for thin history / proprietary nature): GDPval-AA, τ²-Bench Telecom, Terminal-Bench Hard, SciCode, AA-LCR, AA-Omniscience, IFBench, CritPt. Most have history starting late 2025 — reconsider for v2 once they accumulate 4+ quarters.
+- **Memory file state**: `project_capability_taxonomy.md` was corrected during this session to fix an earlier inaccuracy that claimed MMMU-Pro was "not on AA's API." It is on AA (189 models, standalone evaluation, not in Intelligence Index v4). Current memory state is correct.
