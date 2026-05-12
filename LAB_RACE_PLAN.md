@@ -11,7 +11,7 @@ Distinguishing characteristic from AA Intelligence Index and LiveBench: those pr
 ## Locked decisions (this session, 2026-05-12)
 
 1. **Two-level structure**: headline = one race (single composite line per lab over time); drill-down = many races (per-capability detail).
-2. **Methodology spine shared with Pace of Change** (`PACE_PLAN.md`), but partial — shared data sources, shared lifecycle metadata, shared capability rollup; **differs on cohort selection** (see #8 below). Make the divergence explicit in methodology copy, not hidden.
+2. **Methodology spine shared with Pace of Change** (`PACE_PLAN.md`), but partial. **Shared**: data sources (verified-primary, model-card fallback), lifecycle metadata (`status`, `activeUntil`), capability rollup, expanded benchmark cohort built during Pace's v3 work (17 benchmarks — see below). **Independent**: aggregator (Pace landed on mean per-quarter delta during v3 work; Lab Race uses average of % of frontier — these don't need to match) and cohort selection rule (#8 below). Make the divergences explicit in methodology copy, not hidden.
 3. **Capability taxonomy is the foundation** (8 buckets from `project_capability_taxonomy.md`). Aggregate at bucket level, not flat across benchmarks. Each bucket gets equal weight regardless of how many benchmarks it contains.
 4. **Unit on the chart**: **% of frontier** (lab score ÷ best-in-class score at that point in time). Naturally normalizes across benchmarks, preserves margin (98% and 60% read differently), composes by averaging.
 5. **Rank within bucket** surfaced on hover or drill-down panel, not on the main chart. Two views of the same data: % of frontier for "by how much," rank for "in what position."
@@ -26,7 +26,7 @@ Distinguishing characteristic from AA Intelligence Index and LiveBench: those pr
    - (b) Most recent saturated benchmark continues to contribute until successor arrives. Smooths transitions but contradicts the "active only" principle.
    - (c) Bucket carries forward a frozen "% of frontier" snapshot until successor arrives. Hybrid.
    - **Tentative lean**: (a) with an explicit "N buckets contributing: X" annotation per quarter so readers can see the changes.
-2. **Single-benchmark buckets.** Most capability buckets currently have one anchor benchmark, so the bucket's "% of frontier" is just that benchmark's. High variance, no within-bucket smoothing. Mitigation: visual indicator on the per-bucket drill-down showing how many benchmarks support it.
+2. **Single-benchmark buckets.** The existing site has 6 active benchmarks; on a one-bucket-per-benchmark view, every bucket is single-benchmark and the bucket's "% of frontier" is just that benchmark's. High variance, no within-bucket smoothing. **Materially defused if Lab Race uses Pace's expanded 17-benchmark cohort** (MMLU-Pro, MMMU-Pro, Aider Polyglot, Terminal-Bench 2.0, SimpleQA Verified added; saturated benchmarks like SWE-bench Verified, GPQA Diamond etc. drop out per cohort rule #8 but a couple are still in their successor's bucket). Mitigation: visual indicator on the per-bucket drill-down showing how many benchmarks support it that quarter.
 3. **Verified vs unverified.** Both, visually distinguished (matching the rest of the site)? Or verified-only for the headline number to prevent a single model-card score determining who "leads"? Tentative lean: both-with-distinction.
 4. **Frontier definition.** "% of frontier" against: (a) current quarter's best across labs, (b) cumulative best across labs at that point in time, (c) cumulative best including future scores. Tentative lean: (b), matches how the existing chart reasons about frontier.
 
@@ -35,7 +35,7 @@ Distinguishing characteristic from AA Intelligence Index and LiveBench: those pr
 - **Cohort-change movement.** The headline number can move because a bucket entered/left the average, not because any lab got better or worse. Readers may misattribute. The "N buckets contributing" annotation helps but may not be enough — consider whether a separate "bucket count" indicator strip is needed.
 - **Capability framing has to be load-bearing.** If most buckets only have one healthy benchmark, the chart is a dressed-up restatement of a familiar five benchmarks. The capability rollup must be genuinely informative, not cosmetic.
 - **Narrow-coverage labs look stronger than they "should."** xAI averaged over 3 buckets at 95% looks more dominant than OpenAI averaged over 8 buckets at 75%. Coverage tag mitigates but doesn't eliminate. Hostile-critic test: "you let xAI skip half the race." Need a defensible answer before launch.
-- **Chinese Leaders composite at capability level.** Chinese Leaders is itself an aggregate of several labs. Does mixing across them make sense at the capability level? At the headline level? Or do we need to handle them specially (e.g., decompose into Chinese sub-labs for this chart only, or render them as a band rather than a single line)?
+- **Chinese Leaders composite at capability level.** Chinese Leaders is itself an aggregate of five sub-labs (DeepSeek, Kimi, MiniMax, Zhipu, Qwen — see memory `project_extraction_status.md`). Does mixing across them make sense at the capability level? At the headline level? Or do we need to handle them specially (e.g., decompose into Chinese sub-labs for this chart only, or render them as a band rather than a single line)? Pace currently treats Chinese Leaders as one entity; if Lab Race diverges, that's another methodology gap to document.
 
 ## Rejected approaches (do not relitigate without strong cause)
 
@@ -66,17 +66,25 @@ The "drill-down = many races" half needs its own format decision in the next ses
 - `project_capability_taxonomy.md` — the 8-bucket capability framework.
 - `project_capability_benchmark_principle.md` — "capabilities follow benchmarks" rule. Applies to successor-replacement logic in cohort rule #8.
 
+## Upstream dependencies (must be resolved or known-state before Lab Race work)
+
+- **Capability taxonomy anchors finalized.** `project_capability_taxonomy.md` v1 still has Computer Use and Real-world Tasks anchors being finalized (per TASKS.md "Make the site work for non-technical audiences" item). Lab Race's bucket-first aggregation rests on the taxonomy being settled. Either confirm anchors before starting Lab Race, or design with a known-pending state and a way to swap later.
+- **Pace of Change production-integration status.** Pace's v3 scratch is built (`.scratch-pace-v3.html`); production integration is pending decisions on site placement and methodology copy. If Lab Race ships before Pace's production integration, it sets infrastructure precedent (capability-bucket schema, frontier calc, % of frontier helper) that Pace then has to conform to — or vice versa. Worth deciding ordering deliberately.
+- **`PACE_PLAN.md` is slightly stale.** During v3 work Pace shifted from median to mean and dropped MMLU full; the locked-decisions section in that file hasn't been rewritten. Treat it as a historical snapshot, not the current spec. TASKS.md line 24 has the more current summary.
+
 ## Out of scope for v1
 
-- Site placement decision (replaces the existing Lab Race tab? Sits alongside? New tab?). Decide in next session after seeing a prototype.
+- Site placement decision (replaces the existing Lab Race tab? Sits alongside? New tab?). Decide after seeing a scratch prototype.
 - Methodology copy / public-facing explanation.
-- Engineering estimate. Produce one in the next session after the four open items are resolved.
+- Engineering estimate. Produce one after the scratch artifact is built and the four open items are resolved.
 
 ## Next session entry point
 
 1. `/clear` to start fresh.
 2. Read this file.
-3. Resolve the four open items, then the six-month regret flags.
-4. Decide drill-down format.
-5. Decide site placement.
-6. Then plan mode for implementation.
+3. Confirm upstream dependencies above are in a usable state (taxonomy anchors, Pace integration ordering).
+4. Resolve the four open items, then the six-month regret flags.
+5. Decide drill-down format.
+6. **Build a scratch artifact first** (`.scratch-lab-race.html` or similar) before any production integration. Mirrors Pace's pattern — battle-test the methodology and visualization before committing to engineering.
+7. Verdict on the scratch: does the headline tell a defensible story? Do the open items have clean answers?
+8. Then decide site placement and enter plan mode for production integration.
