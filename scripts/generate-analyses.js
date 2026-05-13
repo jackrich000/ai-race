@@ -369,7 +369,7 @@ function getDataForRange(startIdx, endIdx) {
   for (const [benchKey, bench] of Object.entries(BENCHMARKS)) {
     const meta = BENCHMARK_META[benchKey];
     const isInactive = !isBenchmarkActive(benchKey, filterEnd);
-    let header = `\n## ${bench.name} (${bench.category})`;
+    let header = `\n## ${bench.name} (${bench.capability})`;
     if (isInactive && meta.status === "saturated") {
       header += ` [SATURATED - ${meta.activeUntil}]`;
     } else if (isInactive && meta.status === "deprecated") {

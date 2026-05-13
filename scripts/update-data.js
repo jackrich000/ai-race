@@ -198,6 +198,39 @@ async function fetchModelCardData(supabase) {
 
 // ─── HTTP helpers ────────────────────────────────────────────
 
+/** Fetch a URL as text with optional headers. Follows redirects. */
+function fetchText(url, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const request = (reqUrl) => {
+      const urlObj = new URL(reqUrl);
+      const options = {
+        hostname: urlObj.hostname,
+        path: urlObj.pathname + urlObj.search,
+        headers: { ...headers },
+      };
+
+      https.get(options, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          request(res.headers.location);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTP ${res.statusCode} from ${reqUrl}`));
+          return;
+        }
+
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => {
+          resolve(Buffer.concat(chunks).toString());
+        });
+      }).on("error", reject);
+    };
+
+    request(url);
+  });
+}
+
 /** Fetch JSON from a URL with optional headers. Follows redirects. */
 function fetchJSON(url, headers = {}) {
   return new Promise((resolve, reject) => {
@@ -266,19 +299,30 @@ function downloadFile(url) {
 
 // ─── Source 1: Artificial Analysis API (HLE + GPQA Diamond) ──
 
-async function fetchArtificialAnalysis() {
-  console.log("   [AA] Fetching Artificial Analysis API...");
+// Module-level cache so the MMMU-Pro page-scrape fetcher can reuse the models list
+// for UUID → lab/model lookup without making a second API call.
+let _aaModelsCache = null;
+
+async function fetchAAModels() {
+  if (_aaModelsCache) return _aaModelsCache;
   const response = await fetchJSON(
     "https://artificialanalysis.ai/api/v2/data/llms/models",
     { "x-api-key": AA_API_KEY }
   );
-
-  // API returns { status, prompt_options, data: [...models] }
   const models = response.data || response;
   if (!Array.isArray(models)) {
     console.warn("   [AA] WARN: Unexpected response structure, expected array in .data");
-    return [];
+    _aaModelsCache = [];
+  } else {
+    _aaModelsCache = models;
   }
+  return _aaModelsCache;
+}
+
+async function fetchArtificialAnalysis() {
+  console.log("   [AA] Fetching Artificial Analysis API...");
+  const models = await fetchAAModels();
+  if (models.length === 0) return [];
 
   const results = [];
   let skipped = 0;
@@ -321,6 +365,59 @@ async function fetchArtificialAnalysis() {
   }
 
   console.log(`   [AA] ${results.length} data points from ${models.length} models (${skipped} skipped)`);
+  return results;
+}
+
+// ─── Source 1b: Artificial Analysis page scrape (MMMU-Pro) ───
+// MMMU-Pro isn't exposed on the /api/v2/data/llms/models endpoint, but the per-evaluation
+// page embeds the same data in escaped JSON. Pattern ported from .scratch-pace-phaseA6.mjs:178-205.
+// Brittleness mitigations: unescape \\" once, require every parsed UUID to resolve in the
+// models cache (so a page-template change won't silently produce wrong-benchmark scores),
+// and the AA source-threshold check at the pipeline level catches a total scrape failure.
+
+async function fetchArtificialAnalysisMMMUPro() {
+  console.log("   [AA] Fetching MMMU-Pro page scrape...");
+  const models = await fetchAAModels();
+  if (models.length === 0) return [];
+
+  const body = await fetchText(
+    "https://artificialanalysis.ai/evaluations/mmmu-pro",
+    { "User-Agent": "Mozilla/5.0" }
+  );
+  const unesc = body.replace(/\\"/g, '"');
+  const byId = new Map(models.map(m => [m.id, m]));
+
+  const results = [];
+  let unresolvedUuids = 0;
+  for (const m of unesc.matchAll(/"mmmu_pro":([0-9.]+)/g)) {
+    const before = unesc.slice(Math.max(0, m.index - 3000), m.index);
+    const ids = [...before.matchAll(/"id":"([0-9a-f-]{36})"/g)];
+    const lastId = ids[ids.length - 1]?.[1];
+    if (!lastId) continue;
+    const a = byId.get(lastId);
+    if (!a) { unresolvedUuids++; continue; }
+
+    const lab = normalizeOrg(a.model_creator?.name);
+    if (!lab || !LAB_KEYS.includes(lab)) continue;
+    if (!a.release_date) continue;
+    const releaseDate = new Date(a.release_date);
+    if (isNaN(releaseDate.getTime())) continue;
+
+    const rawScore = parseFloat(m[1]);
+    if (isNaN(rawScore)) continue;
+
+    results.push({
+      benchmark: "mmmu-pro",
+      lab,
+      model: a.name || a.slug || "Unknown",
+      score: rawScore <= 1 ? rawScore * 100 : rawScore,
+      date: releaseDate,
+      source: "artificialanalysis",
+      verified: true,
+    });
+  }
+
+  console.log(`   [AA] MMMU-Pro: ${results.length} data points (${unresolvedUuids} unresolved UUIDs skipped)`);
   return results;
 }
 
@@ -739,10 +836,11 @@ async function main() {
     process.exit(1);
   }
 
-  // Fetch from all 4 sources in parallel
+  // Fetch from all sources in parallel
   console.log("\n1. Fetching from all sources...");
-  const [aaData, sweData, arcData, epochData, costData] = await Promise.all([
+  const [aaData, aaMMMUProData, sweData, arcData, epochData, costData] = await Promise.all([
     fetchArtificialAnalysis().catch(err => { console.error("   [AA] FAILED:", err.message); return []; }),
+    fetchArtificialAnalysisMMMUPro().catch(err => { console.error("   [AA MMMU-Pro] FAILED:", err.message); return []; }),
     fetchSWEBench().catch(err => { console.error("   [SWE] FAILED:", err.message); return []; }),
     fetchARCPrize().catch(err => { console.error("   [ARC] FAILED:", err.message); return []; }),
     fetchEpoch().catch(err => { console.error("   [Epoch] FAILED:", err.message); return []; }),
@@ -754,8 +852,10 @@ async function main() {
   // empty. Preserves last-good benchmark_scores; signals via marker + stdout sentinel.
   // The marker is written on every run (success or failure) so the orchestrator
   // can render a "Source Health" table in the issue body for ongoing trend visibility.
+  // MMMU-Pro counts fold into the AA bucket so a scrape failure surfaces against the
+  // existing AA threshold rather than requiring a new threshold key.
   const sourceCounts = {
-    artificialanalysis: aaData,
+    artificialanalysis: [...aaData, ...aaMMMUProData],
     swebench:           sweData,
     arcprize:           arcData,
     epoch:              epochData,
@@ -804,7 +904,7 @@ async function main() {
     console.log(`   Using ${MODEL_CARD_DATA.length} hardcoded model card entries (DB fallback)`);
   }
 
-  const allMerged = [...aaData, ...sweData, ...arcData, ...epochData, ...modelCardData, ...SWEBENCH_PRO_SEED];
+  const allMerged = [...aaData, ...aaMMMUProData, ...sweData, ...arcData, ...epochData, ...modelCardData, ...SWEBENCH_PRO_SEED];
   const allFiltered = filterVerifiedDuplicates(allMerged);
 
   const byBenchmark = {}; // { benchKey: { labKey: [dataPoints] } }
@@ -862,7 +962,7 @@ async function main() {
   }
 
   // Automated benchmarks managed by this script. Manual seeds (humaneval) are excluded.
-  const automatedBenchmarks = ["swe-bench-verified", "arc-agi-1", "arc-agi-2", "arc-agi-3", "hle", "gpqa", "aime", "frontiermath", "math-l5", "swe-bench-pro", "osworld-verified"];
+  const automatedBenchmarks = ["swe-bench-verified", "arc-agi-1", "arc-agi-2", "arc-agi-3", "hle", "gpqa", "aime", "frontiermath", "math-l5", "swe-bench-pro", "osworld-verified", "mmmu-pro"];
 
   // Compute cumulative best per (benchmark, lab) and build upsert rows
   const allRows = [];

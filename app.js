@@ -27,6 +27,7 @@ const BENCHMARK_SOURCE_MAP = {
   "frontiermath":  "Epoch AI",
   "math-l5":       "Epoch AI",
   "osworld-verified": "Epoch AI",
+  "mmmu-pro":      "Artificial Analysis",
 };
 
 const COST_SOURCE = "Artificial Analysis";
@@ -64,36 +65,26 @@ let currentDateRange = "all-time";
 let chart = null;
 let chartMode = null; // tracks which mode the chart was built for
 let isolatedIndex = null;
-let highlightedInactiveIndex = null; // currently highlighted inactive dataset
+let highlightedInactiveIndex = null; // currently highlighted inactive dataset (single-line hover)
+let highlightedCapability = null;    // capability whose defeated group is hover-highlighted
+let isolatedCapability = null;       // capability whose defeated group is click-isolated
+let endpointLabelTargets = new Map(); // dataset index → { color, label }; consumed by endpointLabelPlugin
 let cachedAnalysis = null; // parsed JSON from Supabase
 
 // Clipboard SVG icon for copy buttons
 const COPY_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V3.5a1.5 1.5 0 00-1.5-1.5H3.5A1.5 1.5 0 002 3.5V9a1.5 1.5 0 001.5 1.5h2"/></svg>';
 
-// Category colors for tab dots
-const CATEGORY_COLORS = {
-  Coding:    "#10b981",
-  Reasoning: "#f59e0b",
-  Knowledge: "#8b5cf6",
-  Science:   "#06b6d4",
-  Math:      "#ef4444",
-  Agentic:   "#ec4899",
-};
-
-// Distinct colors for each benchmark line in frontier mode
-const BENCHMARK_COLORS = {
-  "swe-bench-verified": "#10b981",
-  "arc-agi-1":     "#f59e0b",
-  "arc-agi-2":     "#f97316",
-  "arc-agi-3":     "#c084fc",
-  "hle":           "#8b5cf6",
-  "gpqa":          "#06b6d4",
-  "aime":          "#ef4444",
-  "swe-bench-pro": "#2dd4bf",
-  "humaneval":     "#6ee7b7",
-  "frontiermath":  "#f472b6",
-  "math-l5":       "#fb7185",
-  "osworld-verified": "#fbbf24",
+// Capability colours: the single source of truth for line + dot colour in frontier mode.
+// Within a capability, multiple lines (active + deprecated/saturated) share the same hue;
+// inactive lines render grey-dashed by default and pick up the capability colour on
+// hover/isolation. Keys must match the strings in CAPABILITIES (lib/config.js).
+const CAPABILITY_COLORS = {
+  "Coding":                "#10b981",
+  "Math":                  "#ef4444",
+  "Expert Reasoning":      "#8b5cf6",
+  "Visual Reasoning":      "#06b6d4",
+  "Computer Use":          "#ec4899",
+  "Novel Problem Solving": "#f59e0b",
 };
 
 // Colors for cost benchmarks
@@ -136,11 +127,11 @@ function updateCitationLine() {
   if (!el) return;
   const sources = getVisibleSources();
   el.innerHTML =
-    `<span>Source: ${sources.join(", ")}</span>` +
     `<button class="chart-action-btn" id="citationInfoBtn" title="View methodology">` +
     `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">` +
     `<circle cx="8" cy="8" r="6.25"/><path d="M8 7v4"/><circle cx="8" cy="5" r="0.5" fill="currentColor" stroke="none"/>` +
-    `</svg></button>`;
+    `</svg></button>` +
+    `<span>Source: ${sources.join(", ")}</span>`;
   document.getElementById("citationInfoBtn").addEventListener("click", () => {
     const target = document.getElementById("methodologySection") || document.getElementById("infoCard");
     if (target) target.scrollIntoView({ behavior: "smooth" });
@@ -171,6 +162,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       currentDateRange = e.target.value;
       applyDateRange();
       fetchAnalysis(currentDateRange);
+    });
+
+    // Re-render the legend on viewport changes so the desktop ↔ mobile layout
+    // switch happens dynamically (browser zoom changes window.innerWidth, so
+    // this also handles 400%+ zoom levels that cross the MOBILE_BREAKPOINT).
+    let legendResizeTimer = null;
+    window.addEventListener("resize", () => {
+      if (legendResizeTimer) clearTimeout(legendResizeTimer);
+      legendResizeTimer = setTimeout(() => {
+        if (chart) renderCustomLegend();
+      }, 150);
     });
   } catch (err) {
     console.error("Failed to load data:", err);
@@ -224,7 +226,7 @@ function renderBenchmarkPills(container) {
 
     const dot = document.createElement("span");
     dot.className = "pill-dot";
-    dot.style.backgroundColor = CATEGORY_COLORS[bench.category] || "#6c9eff";
+    dot.style.backgroundColor = CAPABILITY_COLORS[bench.capability] || "#6c9eff";
 
     btn.appendChild(dot);
     btn.appendChild(document.createTextNode(bench.name));
@@ -266,18 +268,13 @@ function renderLabPills(container) {
   });
   container.appendChild(allBtn);
 
-  // One pill per lab
+  // One pill per lab. The coloured dot was removed — lab colours only matter
+  // in the race-mode chart; in frontier mode they're visual noise on the filter.
   for (const [key, lab] of Object.entries(LABS)) {
     const btn = document.createElement("button");
     btn.className = `filter-pill${key === selectedLab ? " active" : ""}`;
     btn.dataset.key = key;
-
-    const dot = document.createElement("span");
-    dot.className = "pill-dot";
-    dot.style.backgroundColor = lab.color;
-
-    btn.appendChild(dot);
-    btn.appendChild(document.createTextNode(lab.name));
+    btn.textContent = lab.name;
 
     btn.addEventListener("click", () => {
       selectedLab = key;
@@ -479,7 +476,7 @@ function buildFrontierDatasets() {
       frontierSources.push(bestSource);
     }
 
-    const color = BENCHMARK_COLORS[benchKey];
+    const color = CAPABILITY_COLORS[meta.capability];
     const baseColor = isInactive ? INACTIVE_COLOR : color;
     const pointStyle = buildPointStyleArrays(frontierVerified, baseColor);
     const ds = {
@@ -569,6 +566,90 @@ const inactivityMarkerPlugin = {
 };
 
 Chart.register(inactivityMarkerPlugin);
+
+// ─── Endpoint label plugin ───────────────────────────────────
+// Draws a small coloured label at the last data point of any dataset whose index
+// is in endpointLabelTargets. Used by the "N defeated" hover/isolate flow to name
+// each defeated line on the chart (same-colour lines need name labels to be
+// distinguishable). If two labels would vertically overlap, the later one shifts
+// down by labelH + 2px.
+const endpointLabelPlugin = {
+  id: "endpointLabel",
+  afterDatasetsDraw(chart) {
+    if (currentMode !== "frontier") return;
+    if (!endpointLabelTargets || endpointLabelTargets.size === 0) return;
+
+    const ctx = chart.ctx;
+    const fontPx = Math.max(10, chartFontSize ? chartFontSize(11) : 11);
+    ctx.save();
+    ctx.font = `600 ${fontPx}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.textBaseline = "middle";
+
+    // Collect target screen positions first so we can resolve y-collisions.
+    const placements = [];
+    for (const [idx, cfg] of endpointLabelTargets) {
+      const ds = chart.data.datasets[idx];
+      if (!ds || !chart.isDatasetVisible(idx)) continue;
+      const meta = chart.getDatasetMeta(idx);
+      // Find the last non-null point
+      let pIdx = -1;
+      for (let i = ds.data.length - 1; i >= 0; i--) {
+        if (ds.data[i] != null) { pIdx = i; break; }
+      }
+      if (pIdx < 0) continue;
+      const point = meta.data[pIdx];
+      if (!point || point.skip) continue;
+      placements.push({ x: point.x, y: point.y, label: cfg.label, color: cfg.color });
+    }
+
+    // Resolve overlaps top-to-bottom: if labels are within labelH of each other,
+    // push the lower one further down.
+    const labelH = fontPx + 8;
+    placements.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < placements.length; i++) {
+      const prev = placements[i - 1];
+      const cur = placements[i];
+      if (cur.y - prev.y < labelH) cur.y = prev.y + labelH;
+    }
+
+    const padX = 6;
+    const padY = 3;
+    for (const p of placements) {
+      const textW = ctx.measureText(p.label).width;
+      const boxW = textW + padX * 2;
+      const boxH = fontPx + padY * 2;
+      // Anchor the label so it sits just to the left of the endpoint when there's
+      // not enough room to the right (right-edge chart cases).
+      let boxX = p.x + 8;
+      if (boxX + boxW > chart.chartArea.right) boxX = p.x - boxW - 8;
+      const boxY = p.y - boxH / 2;
+
+      ctx.fillStyle = p.color + "B3"; // ~70% alpha
+      const r = 3;
+      // Rounded rect
+      ctx.beginPath();
+      ctx.moveTo(boxX + r, boxY);
+      ctx.lineTo(boxX + boxW - r, boxY);
+      ctx.quadraticCurveTo(boxX + boxW, boxY, boxX + boxW, boxY + r);
+      ctx.lineTo(boxX + boxW, boxY + boxH - r);
+      ctx.quadraticCurveTo(boxX + boxW, boxY + boxH, boxX + boxW - r, boxY + boxH);
+      ctx.lineTo(boxX + r, boxY + boxH);
+      ctx.quadraticCurveTo(boxX, boxY + boxH, boxX, boxY + boxH - r);
+      ctx.lineTo(boxX, boxY + r);
+      ctx.quadraticCurveTo(boxX, boxY, boxX + r, boxY);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "left";
+      ctx.fillText(p.label, boxX + padX, p.y);
+    }
+
+    ctx.restore();
+  },
+};
+
+Chart.register(endpointLabelPlugin);
 
 // Allow points to draw slightly past the chart area on the right (into layout padding)
 // so markers at the last quarter aren't clipped. Positive = allow overflow.
@@ -771,6 +852,8 @@ function renderChart() {
 function renderCustomLegend() {
   const container = document.getElementById("chartLegend");
   container.innerHTML = "";
+  // Always strip mode-specific classes so they don't leak across mode switches.
+  container.classList.remove("frontier-grid", "frontier-mobile");
 
   if (!chart) return;
 
@@ -786,14 +869,117 @@ function renderCustomLegend() {
     }
   });
 
-  // Active items
-  activeItems.forEach(({ ds, idx }) => {
-    const btn = createLegendButton(ds, idx, false);
+  const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
+
+  // Frontier mode on desktop: capability-grouped 6-column grid.
+  // Frontier on mobile: condensed capability-pill row (one pill per capability,
+  // text coloured by capability so the colour cue is preserved).
+  // Race/cost modes (any size): original flat-list layout.
+  if (currentMode === "frontier" && !isMobile) {
+    renderFrontierGrid(container, activeItems, inactiveItems);
+  } else if (currentMode === "frontier" && isMobile) {
+    renderFrontierMobile(container, activeItems);
+  } else {
+    renderFlatLegend(container, activeItems, inactiveItems, isMobile);
+  }
+}
+
+// Mobile-only: a flat row of capability pills. Each pill is interactive —
+// clicking isolates the chart to that capability's active benchmark, matching
+// the desktop "click a benchmark name to isolate" interaction model.
+function renderFrontierMobile(container, activeItems) {
+  container.classList.add("frontier-mobile");
+  const grouped = groupDatasetsByCapability(activeItems, []);
+
+  for (const cap of CAPABILITIES) {
+    const items = grouped[cap].active;
+    if (items.length === 0) continue;
+    const { idx } = items[0];
+
+    const btn = document.createElement("button");
+    btn.className = "legend-cap-pill";
+    if (!chart.isDatasetVisible(idx)) btn.classList.add("hidden");
+    btn.textContent = cap;
+    btn.title = cap;
+
+    const capColor = CAPABILITY_COLORS[cap];
+    if (capColor) btn.style.color = lightenHex(capColor, 0.45);
+
+    btn.addEventListener("click", () => {
+      if (isolatedCapability !== null) {
+        isolatedCapability = null;
+        endpointLabelTargets.clear();
+      }
+      handleLegendClick(idx);
+      renderCustomLegend();
+    });
+
     container.appendChild(btn);
+  }
+}
+
+// Group datasets by their benchmark's capability, splitting active vs. inactive.
+// Returns { "Coding": { active: [{ds, idx}], inactive: [...] }, ... } seeded with
+// every entry in CAPABILITIES (so empty capabilities still get rendered as a column
+// header — currently unused but kept for taxonomy completeness).
+function groupDatasetsByCapability(activeItems, inactiveItems) {
+  const grouped = {};
+  for (const cap of CAPABILITIES) grouped[cap] = { active: [], inactive: [] };
+  const assign = (items, key) => {
+    for (const item of items) {
+      const meta = BENCHMARK_META[item.ds._benchKey];
+      const cap = meta?.capability;
+      if (cap && grouped[cap]) grouped[cap][key].push(item);
+    }
+  };
+  assign(activeItems, "active");
+  assign(inactiveItems, "inactive");
+  return grouped;
+}
+
+function renderFrontierGrid(container, activeItems, inactiveItems) {
+  container.classList.add("frontier-grid");
+  const grouped = groupDatasetsByCapability(activeItems, inactiveItems);
+
+  for (const cap of CAPABILITIES) {
+    const col = document.createElement("div");
+    col.className = "legend-column";
+    col.appendChild(renderCapabilityHeader(cap));
+
+    for (const { ds, idx } of grouped[cap].active) {
+      col.appendChild(createLegendButton(ds, idx, false));
+    }
+
+    if (grouped[cap].inactive.length > 0) {
+      col.appendChild(renderDefeatedLink(cap, grouped[cap].inactive));
+    }
+
+    container.appendChild(col);
+  }
+}
+
+// Blend a hex colour with white by `mix` proportion (0-1). Used to derive the
+// lighter "header" hue from the saturated capability line colour — a 0.45 mix
+// gives a pastel header that reads as the capability without competing
+// with the white-on-dark active benchmark name below it.
+function lightenHex(hex, mix) {
+  const c = hex.replace("#", "");
+  const r = parseInt(c.slice(0, 2), 16);
+  const g = parseInt(c.slice(2, 4), 16);
+  const b = parseInt(c.slice(4, 6), 16);
+  const nr = Math.round(r + (255 - r) * mix);
+  const ng = Math.round(g + (255 - g) * mix);
+  const nb = Math.round(b + (255 - b) * mix);
+  return "#" + [nr, ng, nb].map(v => v.toString(16).padStart(2, "0")).join("");
+}
+
+function renderFlatLegend(container, activeItems, inactiveItems, isMobile) {
+  activeItems.forEach(({ ds, idx }) => {
+    container.appendChild(createLegendButton(ds, idx, false));
   });
 
-  // Inactive section (only in frontier mode, hidden on mobile)
-  const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
+  // Inactive section only in frontier mode (we only reach here on mobile in that case;
+  // race/cost modes never have _isInactive datasets in the current data model).
   if (inactiveItems.length > 0 && currentMode === "frontier" && !isMobile) {
     const divider = document.createElement("div");
     divider.className = "legend-divider";
@@ -805,10 +991,52 @@ function renderCustomLegend() {
     container.appendChild(label);
 
     inactiveItems.forEach(({ ds, idx }) => {
-      const btn = createLegendButton(ds, idx, true);
-      container.appendChild(btn);
+      container.appendChild(createLegendButton(ds, idx, true));
     });
   }
+}
+
+function renderCapabilityHeader(capName) {
+  const header = document.createElement("div");
+  header.className = "legend-cap-header";
+  // Text in a span so text-overflow: ellipsis works inside the flex layout.
+  const text = document.createElement("span");
+  text.className = "legend-cap-header-text";
+  text.textContent = capName;
+  // Native browser tooltip exposes the full name when the column is narrow
+  // enough that text-overflow: ellipsis kicks in (e.g. "Novel Problem Solving"
+  // at lower zoom levels).
+  text.title = capName;
+  const capColor = CAPABILITY_COLORS[capName];
+  if (capColor) text.style.color = lightenHex(capColor, 0.45);
+  header.appendChild(text);
+  return header;
+}
+
+function renderDefeatedLink(capName, inactiveItems) {
+  const btn = document.createElement("button");
+  btn.className = "legend-defeated-link";
+  if (isolatedCapability === capName) btn.classList.add("isolated");
+
+  const n = inactiveItems.length;
+  btn.textContent = `${n} defeated`;
+
+  btn.addEventListener("mouseenter", (e) => {
+    highlightCapabilityDefeated(capName, inactiveItems);
+    showMultiBenchmarkTooltip(inactiveItems.map(i => i.ds), e.clientX, e.clientY);
+  });
+  btn.addEventListener("mouseleave", () => {
+    unhighlightCapabilityDefeated();
+    hideInactiveTooltip();
+  });
+  btn.addEventListener("click", () => {
+    // Clear any hover highlight before toggling
+    unhighlightCapabilityDefeated();
+    toggleIsolateCapabilityDefeated(capName, inactiveItems);
+    renderCustomLegend();
+  });
+
+  return btn;
 }
 
 function createLegendButton(ds, idx, isInactive) {
@@ -826,9 +1054,13 @@ function createLegendButton(ds, idx, isInactive) {
 
   // Click: isolate / restore
   btn.addEventListener("click", () => {
-    // Clear any hover highlight before toggling
+    // Clear any hover highlight + group state before toggling individual isolation
     if (highlightedInactiveIndex !== null) {
       unhighlightInactive(highlightedInactiveIndex);
+    }
+    if (isolatedCapability !== null) {
+      isolatedCapability = null;
+      endpointLabelTargets.clear();
     }
     handleLegendClick(idx);
     renderCustomLegend();
@@ -876,9 +1108,85 @@ function handleLegendClick(clickedIndex) {
   chart.update();
 }
 
+// ─── Capability defeated-group highlight + isolation ─────────
+// Hovering "N defeated" lights up all defeated lines in that capability in the
+// capability colour, paints endpoint labels at each line's last data point, and
+// shows a multi-benchmark tooltip. Click toggles full isolation (other lines hidden).
+
+function highlightCapabilityDefeated(capName, inactiveItems) {
+  if (highlightedCapability === capName) return;
+  if (highlightedCapability !== null) unhighlightCapabilityDefeated();
+  highlightedCapability = capName;
+
+  // If a different capability is currently click-isolated, the other capability's
+  // datasets aren't visible anyway — skip the chart-visual updates so we don't
+  // stomp on the isolated capability's endpoint labels. The tooltip still shows.
+  if (isolatedCapability !== null && isolatedCapability !== capName) {
+    return;
+  }
+
+  inactiveItems.forEach(({ ds }) => applyActiveStyle(ds));
+
+  const color = CAPABILITY_COLORS[capName] || INACTIVE_COLOR;
+  endpointLabelTargets.clear();
+  for (const { ds, idx } of inactiveItems) {
+    endpointLabelTargets.set(idx, { color, label: ds.label });
+  }
+  chart.update("none");
+}
+
+function unhighlightCapabilityDefeated() {
+  if (highlightedCapability === null) return;
+  highlightedCapability = null;
+  // Don't reset styles for the capability that's currently click-isolated.
+  if (isolatedCapability) {
+    // Click-isolation keeps its own coloured state; just stop drawing endpoint labels
+    // for the hover-only case (they're re-set by the isolation logic if still active).
+    return;
+  }
+  chart.data.datasets.forEach((ds) => {
+    if (ds._isInactive && chart.data.datasets.indexOf(ds) !== isolatedIndex) {
+      resetInactiveStyle(ds);
+    }
+  });
+  endpointLabelTargets.clear();
+  chart.update("none");
+}
+
+function toggleIsolateCapabilityDefeated(capName, inactiveItems) {
+  if (isolatedCapability === capName) {
+    // Restore all
+    isolatedCapability = null;
+    endpointLabelTargets.clear();
+    chart.data.datasets.forEach((ds, i) => {
+      chart.setDatasetVisibility(i, true);
+      if (ds._isInactive) resetInactiveStyle(ds);
+    });
+  } else {
+    // Isolate the group
+    isolatedCapability = capName;
+    isolatedIndex = null;
+    const keepIdx = new Set(inactiveItems.map(({ idx }) => idx));
+    chart.data.datasets.forEach((ds, i) => {
+      chart.setDatasetVisibility(i, keepIdx.has(i));
+      if (keepIdx.has(i) && ds._isInactive) {
+        applyActiveStyle(ds);
+      } else if (ds._isInactive) {
+        resetInactiveStyle(ds);
+      }
+    });
+    const color = CAPABILITY_COLORS[capName] || INACTIVE_COLOR;
+    endpointLabelTargets.clear();
+    for (const { ds, idx } of inactiveItems) {
+      endpointLabelTargets.set(idx, { color, label: ds.label });
+    }
+  }
+  chart.update();
+}
+
 // ─── Inactive line styling helpers ───────────────────────────
 function applyActiveStyle(ds) {
-  const color = BENCHMARK_COLORS[ds._benchKey];
+  const color = CAPABILITY_COLORS[BENCHMARK_META[ds._benchKey]?.capability] || ds.borderColor;
   ds.borderColor = color;
   ds.backgroundColor = color + "33";
   ds.pointHoverBackgroundColor = color;
@@ -1006,9 +1314,12 @@ function getOrCreateInactiveTooltip() {
   return inactiveTooltipEl;
 }
 
-function showInactiveTooltip(ds, clientX, clientY) {
-  const tip = getOrCreateInactiveTooltip();
+// Build one row of tooltip HTML for an inactive dataset: name + status badge + peak line.
+// Reason text intentionally omitted (peak score conveys the saturation story; deeper
+// context lives in the methodology section).
+function buildInactiveTooltipRowHtml(ds) {
   const meta = BENCHMARK_META[ds._benchKey];
+  if (!meta) return "";
 
   const statusLabel = meta.status === "deprecated" ? "Deprecated" : "Saturated";
   const statusClass = meta.status === "deprecated" ? "deprecated" : "saturated";
@@ -1029,15 +1340,12 @@ function showInactiveTooltip(ds, clientX, clientY) {
   }
 
   const labName = latestLab ? (LABS[latestLab]?.name || latestLab) : null;
-
   const safeName = escapeHtml(ds.label);
   const safeModel = latestModel ? escapeHtml(latestModel) : null;
   const safeLabName = labName ? escapeHtml(labName) : null;
 
-  let html = `<div class="inactive-tooltip-name">${safeName} <span class="status-badge ${statusClass}">${statusLabel} ${meta.activeUntil}</span></div>`;
-  if (meta.inactiveReason) {
-    html += `<div class="inactive-tooltip-reason">${escapeHtml(meta.inactiveReason)}</div>`;
-  }
+  let html = `<div class="inactive-tooltip-row">`;
+  html += `<div class="inactive-tooltip-name">${safeName} <span class="status-badge ${statusClass}">${statusLabel} ${meta.activeUntil || ""}</span></div>`;
   if (latestScore !== null) {
     html += `<div class="inactive-tooltip-score">Peak: ${latestScore.toFixed(1)}%`;
     if (safeModel && safeLabName) html += ` (${safeModel}, ${safeLabName})`;
@@ -1045,22 +1353,33 @@ function showInactiveTooltip(ds, clientX, clientY) {
     if (latestQuarter) html += ` \u2014 ${latestQuarter}`;
     html += `</div>`;
   }
+  html += `</div>`;
+  return html;
+}
 
-  tip.innerHTML = html;
+function positionTooltip(tip, clientX, clientY) {
   tip.style.display = "block";
-
-  // Position above cursor so it doesn't overlap the horizontal line
   const rect = tip.getBoundingClientRect();
   let left = clientX - rect.width / 2;
   let top = clientY - rect.height - 16;
-
-  // Keep within viewport
   if (left < 8) left = 8;
   if (left + rect.width > window.innerWidth - 8) left = window.innerWidth - rect.width - 8;
   if (top < 8) top = clientY + 20; // flip below if no room above
-
   tip.style.left = left + "px";
   tip.style.top = top + "px";
+}
+
+function showInactiveTooltip(ds, clientX, clientY) {
+  const tip = getOrCreateInactiveTooltip();
+  tip.innerHTML = buildInactiveTooltipRowHtml(ds);
+  positionTooltip(tip, clientX, clientY);
+}
+
+// Multi-benchmark tooltip used by "N defeated" hover. Stacks one row per defeated dataset.
+function showMultiBenchmarkTooltip(datasets, clientX, clientY) {
+  const tip = getOrCreateInactiveTooltip();
+  tip.innerHTML = datasets.map(buildInactiveTooltipRowHtml).join("");
+  positionTooltip(tip, clientX, clientY);
 }
 
 function hideInactiveTooltip() {
@@ -1070,6 +1389,9 @@ function hideInactiveTooltip() {
 function updateChart() {
   isolatedIndex = null;
   highlightedInactiveIndex = null;
+  isolatedCapability = null;
+  highlightedCapability = null;
+  endpointLabelTargets.clear();
   hideInactiveTooltip();
   clearChartMessage();
 
@@ -1132,41 +1454,62 @@ function renderInfoArea() {
       `;
     }
   } else {
+    // Group benchmarks by capability in CAPABILITIES order. Within each
+    // capability: active first, then inactive (mirrors the legend's
+    // header \u2192 active \u2192 "N defeated" structure).
+    const benchKeysByCapability = {};
+    for (const cap of CAPABILITIES) benchKeysByCapability[cap] = { active: [], inactive: [] };
     for (const [key, bench] of Object.entries(BENCHMARKS)) {
-      const color = BENCHMARK_COLORS[key] || INACTIVE_COLOR;
-      const isOpen = false;
-      const isInactive = !isBenchmarkActive(key, filterEnd);
       const meta = BENCHMARK_META[key];
+      if (!meta || !benchKeysByCapability[meta.capability]) continue;
+      const isInactive = !isBenchmarkActive(key, filterEnd);
+      benchKeysByCapability[meta.capability][isInactive ? "inactive" : "active"].push(key);
+    }
 
-      // Status badge
-      let statusBadge = "";
-      if (isInactive && meta.status === "deprecated") {
-        statusBadge = `<span class="status-badge deprecated">Deprecated ${meta.activeUntil}</span>`;
-      } else if (isInactive && meta.status === "saturated") {
-        statusBadge = `<span class="status-badge saturated">Saturated ${meta.activeUntil}</span>`;
-      }
+    for (const cap of CAPABILITIES) {
+      const group = benchKeysByCapability[cap];
+      const orderedKeys = [...group.active, ...group.inactive];
+      for (const key of orderedKeys) {
+        const bench = BENCHMARKS[key];
+        const isOpen = false;
+        const isInactive = !isBenchmarkActive(key, filterEnd);
+        const meta = BENCHMARK_META[key];
+        const capColor = CAPABILITY_COLORS[meta?.capability] || INACTIVE_COLOR;
+        // Capability label always reflects the capability, regardless of lifecycle.
+        const badgeColor = lightenHex(capColor, 0.45);
+        // Dot mirrors the chart line colour \u2014 grey for inactive, capability colour for active.
+        const dotColor = isInactive ? INACTIVE_COLOR : capColor;
 
-      // Description with inactive reason
-      let description = bench.description;
-      if (isInactive && meta.inactiveReason) {
-        description += ` <em style="color:var(--text-muted);">${meta.inactiveReason}.</em>`;
-      }
+        // Status badge
+        let statusBadge = "";
+        if (isInactive && meta.status === "deprecated") {
+          statusBadge = `<span class="status-badge deprecated">Deprecated ${meta.activeUntil}</span>`;
+        } else if (isInactive && meta.status === "saturated") {
+          statusBadge = `<span class="status-badge saturated">Saturated ${meta.activeUntil}</span>`;
+        }
 
-      html += `
-        <div class="benchmark-item" data-bench="${key}">
-          <button class="benchmark-item-header" aria-expanded="${isOpen}">
-            <span class="pill-dot" style="background-color: ${isInactive ? INACTIVE_COLOR : color}"></span>
-            <span class="benchmark-item-name">${bench.name}</span>
-            <span class="category-badge">${bench.category}</span>
-            ${statusBadge}
-            <span class="expand-icon">${isOpen ? "\u2212" : "+"}</span>
-          </button>
-          <div class="benchmark-item-detail"${isOpen ? "" : " hidden"}>
-            <p>${description}</p>
-            <a href="${bench.link}" target="_blank" rel="noopener">Learn more &rarr;</a>
+        // Description with inactive reason
+        let description = bench.description;
+        if (isInactive && meta.inactiveReason) {
+          description += ` <em style="color:var(--text-muted);">${meta.inactiveReason}.</em>`;
+        }
+
+        html += `
+          <div class="benchmark-item" data-bench="${key}">
+            <button class="benchmark-item-header" aria-expanded="${isOpen}">
+              <span class="pill-dot" style="background-color: ${dotColor}"></span>
+              <span class="benchmark-item-name">${bench.name}</span>
+              <span class="category-badge" style="color: ${badgeColor}; background: transparent">${bench.capability}</span>
+              ${statusBadge}
+              <span class="expand-icon">${isOpen ? "\u2212" : "+"}</span>
+            </button>
+            <div class="benchmark-item-detail"${isOpen ? "" : " hidden"}>
+              <p>${description}</p>
+              <a href="${bench.link}" target="_blank" rel="noopener">Learn more &rarr;</a>
+            </div>
           </div>
-        </div>
-      `;
+        `;
+      }
     }
   }
 
@@ -1423,25 +1766,61 @@ function buildExportCanvas() {
   const scaled = (base) => Math.round(base * CHART_DPR * exportScale);
 
   const pad = scaled(16);           // outer padding around entire export
-  const rowH = scaled(30);          // height of one legend row
+  const rowH = scaled(22);          // height of one legend row inside a column
   const citationH = scaled(36);     // height of the citation footer
-  const dividerGap = scaled(6);     // gap around the active/inactive divider line
   const legendBottomPad = scaled(16); // space between legend and chart
   const fontSize = scaled(11);      // legend label font size
-  const smallFontSize = scaled(9);  // section header font size ("MAJOR BENCHMARKS ~DEFEATED")
-  const dotR = scaled(4);           // legend color dot radius
+  const smallFontSize = scaled(9);  // capability header font size
+  const dotR = scaled(4);           // capability colour dot radius
   const dotTextGap = scaled(6);     // gap between dot and label text
-  const itemGap = scaled(16);       // gap between legend items
   const citationFontSize = scaled(10); // citation footer font size
 
-  // Determine legend layout
+  // ─── Build per-capability column groups (frontier mode) or fall back to flat
+  // legend (race/cost modes). Mirrors renderCustomLegend's branching.
   const visibleDatasets = chart.data.datasets
     .map((ds, i) => ({ ds, idx: i }))
     .filter(({ idx }) => chart.isDatasetVisible(idx));
-  const activeDs = visibleDatasets.filter(({ ds }) => !ds._isInactive);
-  const inactiveDs = visibleDatasets.filter(({ ds }) => ds._isInactive);
-  const hasInactiveRow = inactiveDs.length > 0 && currentMode === "frontier";
-  const legendH = (hasInactiveRow ? rowH * 2 + dividerGap : rowH) + legendBottomPad;
+
+  const isFrontier = currentMode === "frontier";
+  let columns = []; // [{ cap, active: [{ds, idx}], defeatedCount }]
+  let flatItems = []; // race/cost fallback
+
+  if (isFrontier) {
+    const grouped = {};
+    for (const cap of CAPABILITIES) grouped[cap] = { active: [], inactive: [] };
+    for (const { ds, idx } of chart.data.datasets.map((ds, i) => ({ ds, idx: i }))) {
+      const meta = BENCHMARK_META[ds._benchKey];
+      const cap = meta?.capability;
+      if (!cap || !grouped[cap]) continue;
+      // For the export, only show defeated entries if they're currently visible
+      // (e.g., user clicked "N defeated" and the chart is showing just that group).
+      if (ds._isInactive) {
+        if (chart.isDatasetVisible(idx)) grouped[cap].inactive.push({ ds, idx });
+        else grouped[cap].inactive.push({ ds, idx, hidden: true });
+      } else if (chart.isDatasetVisible(idx)) {
+        grouped[cap].active.push({ ds, idx });
+      }
+    }
+    columns = CAPABILITIES.map(cap => ({
+      cap,
+      active: grouped[cap].active,
+      defeatedCount: grouped[cap].inactive.length,
+    }));
+  } else {
+    flatItems = visibleDatasets;
+  }
+
+  // Compute legend height: max rows per column (header + each active + optional defeated link).
+  let legendH;
+  if (isFrontier) {
+    const maxRows = columns.reduce((m, c) => {
+      const rows = 1 /* header */ + c.active.length + (c.defeatedCount > 0 ? 1 : 0);
+      return Math.max(m, rows);
+    }, 1);
+    legendH = maxRows * rowH + legendBottomPad;
+  } else {
+    legendH = rowH + legendBottomPad;
+  }
 
   const totalW = chartW + pad * 2;
   const totalH = chartH + pad + legendH + citationH;
@@ -1454,58 +1833,80 @@ function buildExportCanvas() {
   // Background
   ctx.fillStyle = "#0f1117";
   ctx.fillRect(0, 0, totalW, totalH);
-  const maxLegendX = totalW - pad;
 
-  let legendX = pad;
-  let legendY = pad + rowH * 0.6;
-
-  function drawLegendItem(ds, textColor) {
-    const isIsolated = isolatedIndex === chart.data.datasets.indexOf(ds);
-    const color = (ds._isInactive && !isIsolated) ? INACTIVE_COLOR : (BENCHMARK_COLORS[ds._benchKey] || ds.borderColor);
-    ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-    const labelWidth = ctx.measureText(ds.label).width;
-    const itemWidth = dotR * 2 + dotTextGap + labelWidth + itemGap;
-    if (legendX + itemWidth > maxLegendX) return;
-
-    ctx.beginPath();
-    ctx.arc(legendX + dotR, legendY, dotR, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.fill();
-    legendX += dotR * 2 + dotTextGap;
-
-    ctx.fillStyle = textColor;
-    ctx.textAlign = "left";
-    ctx.fillText(ds.label, legendX, legendY + fontSize * 0.35);
-    legendX += labelWidth + itemGap;
+  // Truncate text with ellipsis to fit within maxW (manual measure + char trim).
+  function ellipsize(text, maxW) {
+    if (ctx.measureText(text).width <= maxW) return text;
+    let lo = 0, hi = text.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (ctx.measureText(text.slice(0, mid) + "…").width <= maxW) lo = mid;
+      else hi = mid - 1;
+    }
+    return text.slice(0, lo) + "…";
   }
 
-  // Row 1: Active items
-  for (const { ds } of activeDs) drawLegendItem(ds, "#9aa0a6");
+  if (isFrontier) {
+    const innerW = totalW - pad * 2;
+    const colW = innerW / CAPABILITIES.length;
+    const colPadR = scaled(8); // right-side breathing room inside each column
 
-  // Row 2: Defeated section (frontier mode only)
-  if (hasInactiveRow) {
-    // Divider line
-    const dividerY = pad + rowH + dividerGap * 0.5;
-    ctx.strokeStyle = "#2d3140";
-    ctx.lineWidth = CHART_DPR;
-    ctx.beginPath();
-    ctx.moveTo(pad, dividerY);
-    ctx.lineTo(totalW - pad, dividerY);
-    ctx.stroke();
+    for (let i = 0; i < columns.length; i++) {
+      const col = columns[i];
+      const colX = pad + i * colW;
+      const colTextMaxW = colW - colPadR;
+      const capColor = CAPABILITY_COLORS[col.cap] || "#6c9eff";
 
-    // Move to row 2
-    legendX = pad;
-    legendY = pad + rowH + dividerGap + rowH * 0.6;
+      let rowY = pad + rowH * 0.6;
 
-    const sectionLabel = "MAJOR BENCHMARKS ~DEFEATED";
-    ctx.font = `bold ${smallFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-    const sectionWidth = ctx.measureText(sectionLabel).width + itemGap;
-    ctx.fillStyle = "#808690";
-    ctx.textAlign = "left";
-    ctx.fillText(sectionLabel, legendX, legendY + smallFontSize * 0.35);
-    legendX += sectionWidth;
+      // Capability header: uppercase, in a lightened version of the capability colour
+      ctx.font = `700 ${smallFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+      ctx.fillStyle = lightenHex(capColor, 0.45);
+      ctx.textAlign = "left";
+      const headerLabel = ellipsize(col.cap.toUpperCase(), colTextMaxW);
+      ctx.fillText(headerLabel, colX, rowY + smallFontSize * 0.35);
+      rowY += rowH;
 
-    for (const { ds } of inactiveDs) drawLegendItem(ds, "#9aa0a6");
+      // Active benchmark name(s)
+      ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+      for (const { ds } of col.active) {
+        ctx.fillStyle = "#d4d6dc";
+        ctx.fillText(ellipsize(ds.label, colTextMaxW), colX, rowY + fontSize * 0.35);
+        rowY += rowH;
+      }
+
+      // Defeated link (static text in export — no interactivity)
+      if (col.defeatedCount > 0) {
+        ctx.fillStyle = "#808690";
+        ctx.fillText(`${col.defeatedCount} defeated`, colX, rowY + fontSize * 0.35);
+      }
+    }
+  } else {
+    // Flat fallback for race/cost modes
+    let legendX = pad;
+    const legendY = pad + rowH * 0.6;
+    const maxLegendX = totalW - pad;
+    const itemGap = scaled(16);
+    ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    for (const { ds } of flatItems) {
+      const labelWidth = ctx.measureText(ds.label).width;
+      const itemWidth = dotR * 2 + dotTextGap + labelWidth + itemGap;
+      if (legendX + itemWidth > maxLegendX) break;
+
+      const benchMeta = BENCHMARK_META[ds._benchKey];
+      const capColor = benchMeta ? CAPABILITY_COLORS[benchMeta.capability] : null;
+      const dotColor = ds._isInactive ? INACTIVE_COLOR : (capColor || ds.borderColor);
+      ctx.beginPath();
+      ctx.arc(legendX + dotR, legendY, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = dotColor;
+      ctx.fill();
+      legendX += dotR * 2 + dotTextGap;
+
+      ctx.fillStyle = "#9aa0a6";
+      ctx.textAlign = "left";
+      ctx.fillText(ds.label, legendX, legendY + fontSize * 0.35);
+      legendX += labelWidth + itemGap;
+    }
   }
 
   // Chart image

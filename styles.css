@@ -185,13 +185,15 @@ main {
   position: relative;
 }
 
-/* Chart citation line */
+/* Chart citation line — info icon on the left, source text follows. Right side
+   reserved for the absolutely-positioned .chart-actions cluster. */
 .chart-citation {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 0.35rem;
   padding-top: 0.75rem;
+  padding-right: 90px;
   font-size: 0.7rem;
   color: var(--text-muted);
   flex-shrink: 0;
@@ -269,6 +271,96 @@ main {
   opacity: 1;
 }
 
+/* ─── Capability-grouped legend (frontier mode desktop only) ─── */
+
+.chart-legend.frontier-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.1rem 0.6rem;
+  align-items: start;
+  padding-right: 0;
+  padding-top: 0;
+  padding-bottom: 0.6rem;
+  /* Chart-container has 1.5rem top padding; legend itself adds 0.6rem to its
+     bottom. Pull legend up so the visual space above and below the legend
+     within the container is roughly equal (rather than 24px top vs 10px bottom). */
+  margin-top: -0.45rem;
+}
+
+.legend-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0; /* allows ellipsis instead of overflow on narrow columns */
+}
+
+.legend-cap-header {
+  display: flex;
+  align-items: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  /* Default colour for the header. Each rendered header span receives an inline
+     `color` override from renderCapabilityHeader — a lightened version of its
+     capability colour. The CSS fallback only applies if the JS override fails. */
+  color: var(--text-muted);
+  user-select: none;
+  padding: 0 0.25rem;
+  min-width: 0;
+}
+
+/* Wrap the header text in a span so ellipsis works inside the flex layout */
+.legend-cap-header-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.legend-defeated-link {
+  background: none;
+  border: none;
+  padding: 0.15rem 0.25rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.legend-defeated-link:hover {
+  color: var(--text-secondary);
+}
+
+.legend-defeated-link.isolated {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Within the capability-grouped grid, only the capability header carries the
+   coloured dot; the active benchmark name sits below as plain text. */
+.chart-legend.frontier-grid .legend-item .legend-dot {
+  display: none;
+}
+
+/* In the grid layout, individual benchmark buttons need to truncate gracefully */
+.chart-legend.frontier-grid .legend-item {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Stacked tooltip rows for "N defeated" hover */
+.inactive-tooltip-row + .inactive-tooltip-row {
+  border-top: 1px solid var(--border);
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+}
+
 /* Status badges for info area */
 .status-badge {
   display: inline-block;
@@ -292,10 +384,13 @@ main {
   color: #9ca3af;
 }
 
-/* Chart export buttons */
+/* Chart export buttons — pinned to the bottom-right of the chart-container so
+   they overlay the right end of the citation row. The citation row reserves
+   right-padding (set on .chart-citation) so the source text doesn't slide
+   underneath. */
 .chart-actions {
   position: absolute;
-  top: 0.6rem;
+  bottom: 0.6rem;
   right: 0.75rem;
   display: flex;
   gap: 0.35rem;
@@ -655,9 +750,9 @@ main {
 }
 
 .inactive-tooltip-score {
-  font-size: 0.8rem;
-  color: var(--text-primary);
-  font-weight: 500;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 400;
 }
 
 /* Footer */
@@ -697,6 +792,44 @@ footer {
 
   /* Legend: tighter spacing, less clearance for action buttons */
   .chart-legend { gap: 0.15rem 0.5rem; padding-right: 40px; padding-bottom: 0.5rem; }
+
+  /* Mobile frontier uses .frontier-mobile (rendered by renderFrontierMobile) —
+     a wrapping row of capability pills. Race/cost modes still fall through
+     to the flat layout. If the desktop grid class somehow survives a resize,
+     strip it back to a flat row as a belt-and-suspenders defence. */
+  .chart-legend.frontier-grid {
+    display: flex;
+    flex-wrap: wrap;
+    grid-template-columns: none;
+  }
+  .legend-cap-header,
+  .legend-defeated-link { display: none; }
+
+  .chart-legend.frontier-mobile {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.15rem 0.5rem;
+    padding-right: 40px;
+    padding-bottom: 0.5rem;
+  }
+
+  .legend-cap-pill {
+    background: none;
+    border: none;
+    padding: 0.3rem 0.35rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-family: inherit;
+    /* Inline color override comes from renderFrontierMobile per pill. */
+  }
+
+  .legend-cap-pill.hidden {
+    opacity: 0.4;
+    text-decoration: line-through;
+  }
 
   /* Smaller action buttons to free legend space */
   .chart-action-btn { padding: 0.2rem; }
