@@ -269,6 +269,76 @@ main {
   opacity: 1;
 }
 
+/* ─── Capability-grouped legend (frontier mode desktop only) ─── */
+
+.chart-legend.frontier-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.4rem 0.85rem;
+  align-items: start;
+  padding-right: 70px;
+}
+
+.legend-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0; /* allows ellipsis instead of overflow on narrow columns */
+}
+
+.legend-cap-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--text-muted);
+  user-select: none;
+  padding: 0.1rem 0.25rem 0.2rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.legend-defeated-link {
+  background: none;
+  border: none;
+  padding: 0.15rem 0.25rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-decoration: underline dotted;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.legend-defeated-link:hover {
+  color: var(--text-secondary);
+}
+
+.legend-defeated-link.isolated {
+  color: var(--text-primary);
+  text-decoration-style: solid;
+}
+
+/* In the grid layout, individual benchmark buttons need to truncate gracefully */
+.chart-legend.frontier-grid .legend-item {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Stacked tooltip rows for "N defeated" hover */
+.inactive-tooltip-row + .inactive-tooltip-row {
+  border-top: 1px solid var(--border);
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+}
+
 /* Status badges for info area */
 .status-badge {
   display: inline-block;
@@ -697,6 +767,17 @@ footer {
 
   /* Legend: tighter spacing, less clearance for action buttons */
   .chart-legend { gap: 0.15rem 0.5rem; padding-right: 40px; padding-bottom: 0.5rem; }
+
+  /* Mobile falls back to the flat legend (renderFlatLegend on mobile only).
+     Strip the grid class if it somehow survives, hide capability headers and
+     defeated link as a belt-and-suspenders defence. */
+  .chart-legend.frontier-grid {
+    display: flex;
+    flex-wrap: wrap;
+    grid-template-columns: none;
+  }
+  .legend-cap-header,
+  .legend-defeated-link { display: none; }
 
   /* Smaller action buttons to free legend space */
   .chart-action-btn { padding: 0.2rem; }

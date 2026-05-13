@@ -5,6 +5,7 @@ const {
   compareQuarters,
   isBenchmarkActive,
   BENCHMARK_META,
+  CAPABILITIES,
   COST_BENCHMARK_META,
   LAB_KEYS,
 } = require("../lib/config.js");
@@ -85,20 +86,31 @@ describe("isBenchmarkActive", () => {
 describe("BENCHMARK_META", () => {
   const expectedKeys = [
     "gpqa", "arc-agi-2", "arc-agi-3", "hle", "swe-bench-pro", "aime", "frontiermath",
-    "osworld-verified",
+    "osworld-verified", "mmmu-pro",
     "humaneval", "arc-agi-1", "swe-bench-verified", "math-l5",
   ];
 
-  it("has all 12 expected benchmark keys", () => {
+  it("has all 13 expected benchmark keys", () => {
     for (const key of expectedKeys) {
       expect(BENCHMARK_META).toHaveProperty(key);
     }
-    expect(Object.keys(BENCHMARK_META)).toHaveLength(12);
+    expect(Object.keys(BENCHMARK_META)).toHaveLength(13);
   });
 
-  it("arc-agi-3 is active and in Reasoning category", () => {
+  it("arc-agi-3 is active and anchors Novel Problem Solving", () => {
     expect(BENCHMARK_META["arc-agi-3"].status).toBe("active");
-    expect(BENCHMARK_META["arc-agi-3"].category).toBe("Reasoning");
+    expect(BENCHMARK_META["arc-agi-3"].capability).toBe("Novel Problem Solving");
+  });
+
+  it("arc-agi-2 is deprecated as of Q2 2026 (replaced by ARC-AGI-3)", () => {
+    expect(BENCHMARK_META["arc-agi-2"].status).toBe("deprecated");
+    expect(BENCHMARK_META["arc-agi-2"].activeUntil).toBe("Q2 2026");
+    expect(BENCHMARK_META["arc-agi-2"].inactiveReason).toMatch(/ARC-AGI-3/);
+  });
+
+  it("mmmu-pro is active and anchors Visual Reasoning", () => {
+    expect(BENCHMARK_META["mmmu-pro"].status).toBe("active");
+    expect(BENCHMARK_META["mmmu-pro"].capability).toBe("Visual Reasoning");
   });
 
   it("osworld-verified is active and explicitly notes lab-coverage gaps in its description", () => {
@@ -111,10 +123,16 @@ describe("BENCHMARK_META", () => {
     for (const [key, meta] of Object.entries(BENCHMARK_META)) {
       expect(meta).toHaveProperty("name");
       expect(meta).toHaveProperty("description");
-      expect(meta).toHaveProperty("category");
+      expect(meta).toHaveProperty("capability");
       expect(meta).toHaveProperty("link");
       expect(meta).toHaveProperty("status");
       expect(["active", "saturated", "deprecated"]).toContain(meta.status);
+    }
+  });
+
+  it("every benchmark's capability is in the canonical CAPABILITIES list", () => {
+    for (const [key, meta] of Object.entries(BENCHMARK_META)) {
+      expect(CAPABILITIES).toContain(meta.capability);
     }
   });
 
@@ -124,6 +142,28 @@ describe("BENCHMARK_META", () => {
         expect(meta).toHaveProperty("activeUntil");
         expect(meta.activeUntil).toMatch(/^Q[1-4] \d{4}$/);
       }
+    }
+  });
+});
+
+// ─── CAPABILITIES ────────────────────────────────────────────
+
+describe("CAPABILITIES", () => {
+  it("has exactly 6 entries in canonical order", () => {
+    expect(CAPABILITIES).toEqual([
+      "Coding",
+      "Math",
+      "Expert Reasoning",
+      "Visual Reasoning",
+      "Computer Use",
+      "Novel Problem Solving",
+    ]);
+  });
+
+  it("every capability has at least one benchmark anchoring it", () => {
+    const usedCapabilities = new Set(Object.values(BENCHMARK_META).map(m => m.capability));
+    for (const cap of CAPABILITIES) {
+      expect(usedCapabilities).toContain(cap);
     }
   });
 });
