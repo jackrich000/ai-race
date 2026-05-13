@@ -97,6 +97,7 @@ main {
 /* Mode toggle */
 .mode-toggle {
   display: inline-flex;
+  flex-wrap: wrap;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -179,10 +180,43 @@ main {
   flex-direction: column;
 }
 
+/* Pace of Progress: container hosts both the line chart and a bar chart, so
+   the fixed height becomes too cramped. Give each canvas an explicit height
+   instead and let the container expand. */
+.chart-container.pace-mode {
+  height: auto;
+}
+.chart-container.pace-mode .chart-canvas-wrapper {
+  flex: none;
+  height: 18rem;
+}
+
 .chart-canvas-wrapper {
   flex: 1;
   min-height: 0;
   position: relative;
+}
+
+/* Pace of Progress: bar chart rendered beneath the headline line chart.
+   Hidden in other modes (via [hidden] attribute toggled in app.js). */
+.pace-bar-wrapper {
+  flex-shrink: 0;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.pace-bar-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin: 0 0 0.75rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pace-bar-wrapper canvas {
+  max-height: 220px;
 }
 
 /* Chart citation line — info icon on the left, source text follows. Right side
@@ -393,6 +427,14 @@ main {
   display: flex;
   gap: 0.35rem;
   z-index: 10;
+}
+
+/* Restore the default `hidden` attribute behaviour for elements whose
+   `display` is set explicitly (which otherwise overrides display:none). */
+.chart-actions[hidden],
+.filter-pills[hidden],
+.chart-legend[hidden] {
+  display: none;
 }
 
 .chart-action-btn {
@@ -783,6 +825,9 @@ footer {
   .controls { flex-direction: column; gap: 0.5rem; }
   .date-range-select { width: 100%; }
   .chart-container { height: 28rem; padding: 1rem; }
+  .chart-container.pace-mode { height: auto; }
+  .chart-container.pace-mode .chart-canvas-wrapper { height: 16rem; }
+  .pace-bar-wrapper canvas { max-height: 200px; }
   .filter-pill { font-size: 0.75rem; padding: 0.35rem 0.75rem; }
   .filter-pills { gap: 0.35rem; }
   .analysis-card { padding: 0.75rem 1rem; }

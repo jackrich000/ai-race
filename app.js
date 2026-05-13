@@ -67,6 +67,7 @@ let currentCostBenchmark = null; // null = all, or "gpqa" / "mmlu-pro"
 let currentDateRange = "all-time";
 let chart = null;
 let chartMode = null; // tracks which mode the chart was built for
+let paceBarChart = null; // second Chart.js instance, only built in pace mode
 let isolatedIndex = null;
 let highlightedInactiveIndex = null; // currently highlighted inactive dataset (single-line hover)
 let highlightedCapability = null;    // capability whose defeated group is hover-highlighted
@@ -212,8 +213,8 @@ function renderFilterPills() {
 
   if (currentMode === "race") {
     renderBenchmarkPills(container);
-  } else if (currentMode === "cost") {
-    // No pills — legend handles filtering via click-to-isolate
+  } else if (currentMode === "cost" || currentMode === "pace") {
+    // No pills — cost uses click-to-isolate in the legend; pace has no per-bench filter
   } else {
     renderLabPills(container);
   }
@@ -523,7 +524,157 @@ function buildFrontierDatasets() {
 function buildDatasets() {
   if (currentMode === "cost") return buildCostDatasets();
   if (currentMode === "race") return buildRaceDatasets();
+  if (currentMode === "pace") return buildPaceLineDatasets();
   return buildFrontierDatasets();
+}
+
+// ─── Pace of Progress ────────────────────────────────────────
+// The pace mode renders two charts: the headline line chart (in the existing
+// #benchmarkChart canvas) and a per-capability bar chart in a separate
+// #paceBarChart canvas that is hidden in other modes. Both are computed from
+// the pure `computePaceSeries()` in lib/pace-chart.js.
+
+function getPaceSeries() {
+  return computePaceSeries({
+    BENCHMARKS,
+    BENCHMARK_META,
+    CAPABILITIES,
+    TIME_LABELS,
+    now: getFilterEndDate(),
+  });
+}
+
+function buildPaceLineDatasets() {
+  const { lineSeries } = getPaceSeries();
+  // Map the pace series onto the full TIME_LABELS x-axis. Earlier quarters
+  // (pre-PACE_CHART_START) remain null so the line starts at Q4 2024.
+  const quarterToValue = Object.fromEntries(lineSeries.map(p => [p.quarter, p]));
+  const data = TIME_LABELS.map(q => quarterToValue[q]?.value ?? null);
+  const partialFlags = TIME_LABELS.map(q => quarterToValue[q]?.isPartial === true);
+  const contributorsByIdx = TIME_LABELS.map(q => quarterToValue[q]?.contributors ?? []);
+  const nByIdx = TIME_LABELS.map(q => quarterToValue[q]?.n ?? 0);
+
+  return [{
+    label: "Frontier pace",
+    data,
+    borderColor: "#e0e6f0",
+    backgroundColor: "rgba(224, 230, 240, 0.15)",
+    borderWidth: 2.5,
+    pointRadius: 4,
+    pointHoverRadius: 6,
+    pointBackgroundColor: partialFlags.map(p => p ? "transparent" : "#e0e6f0"),
+    pointBorderColor: "#e0e6f0",
+    pointBorderWidth: partialFlags.map(p => p ? 2 : 1),
+    tension: 0.25,
+    spanGaps: false,
+    segment: {
+      // Dash the segment that ENDS at a partial point.
+      borderDash: ctx => partialFlags[ctx.p1DataIndex] ? [6, 4] : undefined,
+    },
+    _paceContributors: contributorsByIdx,
+    _paceN: nByIdx,
+    _paceIsPartial: partialFlags,
+  }];
+}
+
+function buildPaceBarConfig() {
+  const { barSeries } = getPaceSeries();
+  const labels = barSeries.map(b => b.isLowN ? `${b.capability} (N=1)` : b.capability);
+  const data = barSeries.map(b => b.value);
+  const bgColors = barSeries.map(b => b.isLowN ? "transparent" : (CAPABILITY_COLORS[b.capability] || INACTIVE_COLOR));
+  const borderColors = barSeries.map(b => CAPABILITY_COLORS[b.capability] || INACTIVE_COLOR);
+  const borderWidths = barSeries.map(b => b.isLowN ? 2 : 1);
+
+  return {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "Avg pace (pp/quarter)",
+        data,
+        backgroundColor: bgColors,
+        borderColor: borderColors,
+        borderWidth: borderWidths,
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          enabled: true,
+          backgroundColor: "#1a1d27",
+          titleColor: "#e8eaed",
+          bodyColor: "#9aa0a6",
+          borderColor: "#2d3140",
+          borderWidth: 1,
+          padding: chartFontSize(10),
+          cornerRadius: 6,
+          titleFont: { size: chartFontSize(12) },
+          bodyFont: { size: chartFontSize(11) },
+          callbacks: {
+            label: ctx => {
+              const b = barSeries[ctx.dataIndex];
+              const lines = [`${b.value.toFixed(1)} pp / quarter`];
+              if (b.isLowN) lines.push("Single-benchmark proxy");
+              return lines;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { color: GRID_COLOR },
+          ticks: { color: "#808690", font: { size: chartFontSize(11) } },
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: GRID_COLOR },
+          ticks: { color: "#808690", font: { size: chartFontSize(11) }, callback: val => val + " pp" },
+          title: { display: true, text: "pp per quarter", color: "#808690", font: { size: chartFontSize(11) } },
+        },
+      },
+      devicePixelRatio: CHART_DPR,
+    },
+  };
+}
+
+function updatePaceBarChart() {
+  const canvas = document.getElementById("paceBarChart");
+  if (!canvas) return;
+  if (paceBarChart) {
+    paceBarChart.destroy();
+    paceBarChart = null;
+  }
+  paceBarChart = new Chart(canvas.getContext("2d"), buildPaceBarConfig());
+}
+
+function destroyPaceBarChart() {
+  if (paceBarChart) {
+    paceBarChart.destroy();
+    paceBarChart = null;
+  }
+}
+
+// Toggle visibility of mode-specific UI chrome. Called from updateChart() so any
+// mode transition (including in/out of pace) reaches a consistent state.
+function setModeVisibility(mode) {
+  const dateRange = document.getElementById("dateRange");
+  const actions = document.querySelector(".chart-actions");
+  const filterPills = document.getElementById("filterPills");
+  const chartLegend = document.getElementById("chartLegend");
+  const paceWrapper = document.getElementById("paceBarChartWrapper");
+  const chartContainer = document.querySelector(".chart-container");
+  const isPace = mode === "pace";
+
+  if (dateRange)      dateRange.hidden     = isPace;
+  if (actions)        actions.hidden       = isPace;
+  if (filterPills)    filterPills.hidden   = isPace;
+  if (chartLegend)    chartLegend.hidden   = isPace;
+  if (paceWrapper)    paceWrapper.hidden   = !isPace;
+  if (chartContainer) chartContainer.classList.toggle("pace-mode", isPace);
 }
 
 // ─── Inactivity marker plugin ────────────────────────────────
@@ -721,6 +872,7 @@ function renderChart() {
     return;
   }
 
+  const isPace = currentMode === "pace";
   const yScale = isCost
     ? {
         type: "logarithmic",
@@ -736,6 +888,17 @@ function renderChart() {
             if (val >= 0.1) return "$" + val.toFixed(1);
             return "$" + val.toFixed(2);
           },
+        },
+      }
+    : isPace
+    ? {
+        beginAtZero: true,
+        title: { display: true, text: "Average pp gained per quarter", color: "#808690", font: { size: chartFontSize(11) }, padding: { top: 0, bottom: 4 } },
+        grid: { color: GRID_COLOR },
+        ticks: {
+          color: "#808690",
+          font: { size: chartFontSize(11) },
+          callback: val => val + " pp",
         },
       }
     : {
@@ -761,6 +924,16 @@ function renderChart() {
         if (lab) line += ` (${lab})`;
         if (score != null) line += `\n  Score: ${score}%`;
         return line.split("\n");
+      }
+    : isPace
+    ? function(context) {
+        const val = context.parsed.y;
+        if (val === null) return null;
+        const n = context.dataset._paceN?.[context.dataIndex] ?? 0;
+        const isPartial = context.dataset._paceIsPartial?.[context.dataIndex] === true;
+        const lines = [`${val.toFixed(1)} pp / quarter (avg across ${n} benchmarks)`];
+        if (isPartial) lines.push("Current quarter — in progress");
+        return lines;
       }
     : function(context) {
         const val = context.parsed.y;
@@ -865,6 +1038,7 @@ function renderCustomLegend() {
   container.classList.remove("frontier-grid", "frontier-mobile");
 
   if (!chart) return;
+  if (currentMode === "pace") return; // pace hides #chartLegend entirely
 
   const datasets = chart.data.datasets;
   const activeItems = [];
@@ -1415,19 +1589,29 @@ function updateChart() {
   hideInactiveTooltip();
   clearChartMessage();
 
-  // If switching between cost and non-cost, destroy and recreate (scale type changes)
-  const needsCost = currentMode === "cost";
-  const hadCost = chartMode === "cost";
-  if (needsCost !== hadCost) {
-    chart.destroy();
+  setModeVisibility(currentMode);
+
+  // Pace and cost both use different y-axis scales than frontier/race, so any
+  // transition into or out of them requires a full chart rebuild.
+  const needsRebuild =
+    (currentMode === "cost") !== (chartMode === "cost") ||
+    (currentMode === "pace") !== (chartMode === "pace");
+  if (needsRebuild) {
+    if (chart) chart.destroy();
+    if (currentMode !== "pace") destroyPaceBarChart();
     renderChart();
+    if (currentMode === "pace") updatePaceBarChart();
     renderCustomLegend();
     updateCitationLine();
     return;
   }
 
+  // Same scale class — update in place. Pace lives in this branch when re-entering
+  // pace mode without a scale change (shouldn't happen with current modes, but
+  // the bar chart still needs to refresh if data updates).
   chart.data.datasets = buildDatasets();
   chart.data.datasets.forEach((_, i) => chart.setDatasetVisibility(i, true));
+  if (currentMode === "pace") updatePaceBarChart();
   applyDateRange();
   renderCustomLegend();
   updateCitationLine();
@@ -1445,9 +1629,17 @@ function renderInfoArea() {
   const filterEnd = getFilterEndDate();
 
   // Methodology intro varies by mode
-  const methodologyText = currentMode === "cost"
-    ? "Shows the cheapest model (any lab) scoring above a fixed threshold on each benchmark, measured in $/M tokens (blended 3:1 input:output). Thresholds are set at what the best model scored when each benchmark launched. Uses cumulative minimum: once a cheaper model exists, the price floor never rises."
-    : 'Scores use independently verified sources wherever available (Artificial Analysis, Epoch AI, ARC Prize, SWE-bench, Scale AI SEAL), shown as solid dots. Where no independent evaluation exists yet, self-reported model card scores from official lab announcements are used, shown as <strong>hollow dots</strong>.';
+  let methodologyText;
+  if (currentMode === "cost") {
+    methodologyText = "Shows the cheapest model (any lab) scoring above a fixed threshold on each benchmark, measured in $/M tokens (blended 3:1 input:output). Thresholds are set at what the best model scored when each benchmark launched. Uses cumulative minimum: once a cheaper model exists, the price floor never rises.";
+  } else if (currentMode === "pace") {
+    methodologyText =
+      'Pace of Progress shows how fast frontier benchmark scores are moving, averaged across 16 benchmarks spanning 6 capabilities. The headline line is the average quarterly increase in best-known score; the bar chart breaks the last 12 months down by capability. ' +
+      '<br><br><strong>What counts in a quarter.</strong> A benchmark contributes its frontier movement that quarter, weighted equally with every other benchmark in the cohort. Saturated benchmarks (no longer advancing) contribute zero — that is what saturation looks like, and we keep them in the cohort up to their saturation quarter so the flatline is visible. ' +
+      '<br><br><strong>Caveats.</strong> Visual Reasoning and Computer Use are anchored by a single benchmark each (MMMU-Pro and OSWorld-Verified). Their bars are outlined to flag the small sample. ARC-AGI\'s three generations occasionally co-contribute in transition quarters (Q1 2025, Q2 2026) where one version winds down as its successor spins up. The current quarter is shown dashed because it is incomplete. The line starts at Q4 2024 — earlier quarters had several capabilities at N=0 and the cohort wasn\'t stable enough to read.';
+  } else {
+    methodologyText = 'Scores use independently verified sources wherever available (Artificial Analysis, Epoch AI, ARC Prize, SWE-bench, Scale AI SEAL), shown as solid dots. Where no independent evaluation exists yet, self-reported model card scores from official lab announcements are used, shown as <strong>hollow dots</strong>.';
+  }
 
   let html = `
     <div class="methodology-intro" id="methodologySection">
@@ -1657,6 +1849,14 @@ async function fetchAnalysis(preset) {
 
 function renderAnalysisCard(mode) {
   const section = document.getElementById("analysisSection");
+  // Pace doesn't ship with LLM commentary in v1 — hide the section entirely
+  // so we don't render an empty "No analysis" card under the chart.
+  if (mode === "pace") {
+    section.hidden = true;
+    section.innerHTML = "";
+    return;
+  }
+  section.hidden = false;
   if (!cachedAnalysis) {
     section.innerHTML = '<div class="analysis-empty">No analysis available for this time range.</div>';
     return;

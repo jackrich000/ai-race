@@ -35,6 +35,7 @@
         <button class="mode-btn active" data-mode="frontier" role="tab" aria-selected="true">AI Frontier</button>
         <button class="mode-btn" data-mode="race" role="tab" aria-selected="false">Lab Race</button>
         <button class="mode-btn" data-mode="cost" role="tab" aria-selected="false">Cost of Intelligence</button>
+        <button class="mode-btn" data-mode="pace" role="tab" aria-selected="false">Pace of Progress</button>
       </div>
       <select id="dateRange" class="date-range-select">
         <option value="all-time" selected>All-time</option>
@@ -67,6 +68,10 @@
       <div class="chart-canvas-wrapper">
         <canvas id="benchmarkChart"></canvas>
       </div>
+      <div class="pace-bar-wrapper" id="paceBarChartWrapper" hidden>
+        <h3 class="pace-bar-title">Average pace by capability — last 12 months</h3>
+        <canvas id="paceBarChart"></canvas>
+      </div>
       <div class="chart-citation" id="chartCitation"></div>
     </div>
 
@@ -92,6 +97,7 @@
   </footer>
 
   <script src="lib/config.js"></script>
+  <script src="lib/pace-chart.js"></script>
   <script src="data-loader.js"></script>
   <script src="app.js"></script>
   <script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>
