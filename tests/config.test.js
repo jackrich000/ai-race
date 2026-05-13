@@ -4,6 +4,7 @@ const {
   generateTimeLabels,
   compareQuarters,
   isBenchmarkActive,
+  isInChartMode,
   BENCHMARK_META,
   CAPABILITIES,
   COST_BENCHMARK_META,
@@ -143,6 +144,36 @@ describe("BENCHMARK_META", () => {
         expect(meta.activeUntil).toMatch(/^Q[1-4] \d{4}$/);
       }
     }
+  });
+});
+
+// ─── chartModes ──────────────────────────────────────────────
+
+describe("chartModes / isInChartMode", () => {
+  it("benchmarks without chartModes default to every mode", () => {
+    expect(isInChartMode("gpqa", "frontier")).toBe(true);
+    expect(isInChartMode("gpqa", "race")).toBe(true);
+    expect(isInChartMode("gpqa", "pace")).toBe(true);
+    expect(isInChartMode("hle", "frontier")).toBe(true);
+    expect(isInChartMode("hle", "race")).toBe(true);
+  });
+
+  it("aider-polyglot and mmlu-pro appear on Frontier + Pace but not Race", () => {
+    for (const key of ["aider-polyglot", "mmlu-pro"]) {
+      expect(isInChartMode(key, "frontier")).toBe(true);
+      expect(isInChartMode(key, "pace")).toBe(true);
+      expect(isInChartMode(key, "race")).toBe(false);
+    }
+  });
+
+  it("terminal-bench-2-0 is Pace-only", () => {
+    expect(isInChartMode("terminal-bench-2-0", "pace")).toBe(true);
+    expect(isInChartMode("terminal-bench-2-0", "frontier")).toBe(false);
+    expect(isInChartMode("terminal-bench-2-0", "race")).toBe(false);
+  });
+
+  it("unknown benchmark keys return false", () => {
+    expect(isInChartMode("does-not-exist", "frontier")).toBe(false);
   });
 });
 
