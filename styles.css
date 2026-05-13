@@ -793,9 +793,10 @@ footer {
   /* Legend: tighter spacing, less clearance for action buttons */
   .chart-legend { gap: 0.15rem 0.5rem; padding-right: 40px; padding-bottom: 0.5rem; }
 
-  /* Mobile falls back to the flat legend (renderFlatLegend on mobile only).
-     Strip the grid class if it somehow survives, hide capability headers and
-     defeated link as a belt-and-suspenders defence. */
+  /* Mobile frontier uses .frontier-mobile (rendered by renderFrontierMobile) —
+     a wrapping row of capability pills. Race/cost modes still fall through
+     to the flat layout. If the desktop grid class somehow survives a resize,
+     strip it back to a flat row as a belt-and-suspenders defence. */
   .chart-legend.frontier-grid {
     display: flex;
     flex-wrap: wrap;
@@ -803,6 +804,32 @@ footer {
   }
   .legend-cap-header,
   .legend-defeated-link { display: none; }
+
+  .chart-legend.frontier-mobile {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.15rem 0.5rem;
+    padding-right: 40px;
+    padding-bottom: 0.5rem;
+  }
+
+  .legend-cap-pill {
+    background: none;
+    border: none;
+    padding: 0.3rem 0.35rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-family: inherit;
+    /* Inline color override comes from renderFrontierMobile per pill. */
+  }
+
+  .legend-cap-pill.hidden {
+    opacity: 0.4;
+    text-decoration: line-through;
+  }
 
   /* Smaller action buttons to free legend space */
   .chart-action-btn { padding: 0.2rem; }

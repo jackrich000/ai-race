@@ -163,6 +163,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       applyDateRange();
       fetchAnalysis(currentDateRange);
     });
+
+    // Re-render the legend on viewport changes so the desktop ↔ mobile layout
+    // switch happens dynamically (browser zoom changes window.innerWidth, so
+    // this also handles 400%+ zoom levels that cross the MOBILE_BREAKPOINT).
+    let legendResizeTimer = null;
+    window.addEventListener("resize", () => {
+      if (legendResizeTimer) clearTimeout(legendResizeTimer);
+      legendResizeTimer = setTimeout(() => {
+        if (chart) renderCustomLegend();
+      }, 150);
+    });
   } catch (err) {
     console.error("Failed to load data:", err);
     showError("Failed to load benchmark data. Please try refreshing the page.");
@@ -841,8 +852,8 @@ function renderChart() {
 function renderCustomLegend() {
   const container = document.getElementById("chartLegend");
   container.innerHTML = "";
-  // Always strip the frontier-grid class so it doesn't leak into race/cost modes.
-  container.classList.remove("frontier-grid");
+  // Always strip mode-specific classes so they don't leak across mode switches.
+  container.classList.remove("frontier-grid", "frontier-mobile");
 
   if (!chart) return;
 
@@ -861,11 +872,49 @@ function renderCustomLegend() {
   const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
 
   // Frontier mode on desktop: capability-grouped 6-column grid.
-  // Frontier on mobile + race/cost modes: original flat-list layout.
+  // Frontier on mobile: condensed capability-pill row (one pill per capability,
+  // text coloured by capability so the colour cue is preserved).
+  // Race/cost modes (any size): original flat-list layout.
   if (currentMode === "frontier" && !isMobile) {
     renderFrontierGrid(container, activeItems, inactiveItems);
+  } else if (currentMode === "frontier" && isMobile) {
+    renderFrontierMobile(container, activeItems);
   } else {
     renderFlatLegend(container, activeItems, inactiveItems, isMobile);
+  }
+}
+
+// Mobile-only: a flat row of capability pills. Each pill is interactive —
+// clicking isolates the chart to that capability's active benchmark, matching
+// the desktop "click a benchmark name to isolate" interaction model.
+function renderFrontierMobile(container, activeItems) {
+  container.classList.add("frontier-mobile");
+  const grouped = groupDatasetsByCapability(activeItems, []);
+
+  for (const cap of CAPABILITIES) {
+    const items = grouped[cap].active;
+    if (items.length === 0) continue;
+    const { idx } = items[0];
+
+    const btn = document.createElement("button");
+    btn.className = "legend-cap-pill";
+    if (!chart.isDatasetVisible(idx)) btn.classList.add("hidden");
+    btn.textContent = cap;
+    btn.title = cap;
+
+    const capColor = CAPABILITY_COLORS[cap];
+    if (capColor) btn.style.color = lightenHex(capColor, 0.45);
+
+    btn.addEventListener("click", () => {
+      if (isolatedCapability !== null) {
+        isolatedCapability = null;
+        endpointLabelTargets.clear();
+      }
+      handleLegendClick(idx);
+      renderCustomLegend();
+    });
+
+    container.appendChild(btn);
   }
 }
 
@@ -954,6 +1003,10 @@ function renderCapabilityHeader(capName) {
   const text = document.createElement("span");
   text.className = "legend-cap-header-text";
   text.textContent = capName;
+  // Native browser tooltip exposes the full name when the column is narrow
+  // enough that text-overflow: ellipsis kicks in (e.g. "Novel Problem Solving"
+  // at lower zoom levels).
+  text.title = capName;
   const capColor = CAPABILITY_COLORS[capName];
   if (capColor) text.style.color = lightenHex(capColor, 0.45);
   header.appendChild(text);
