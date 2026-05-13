@@ -1055,6 +1055,13 @@ function highlightCapabilityDefeated(capName, inactiveItems) {
   if (highlightedCapability !== null) unhighlightCapabilityDefeated();
   highlightedCapability = capName;
 
+  // If a different capability is currently click-isolated, the other capability's
+  // datasets aren't visible anyway — skip the chart-visual updates so we don't
+  // stomp on the isolated capability's endpoint labels. The tooltip still shows.
+  if (isolatedCapability !== null && isolatedCapability !== capName) {
+    return;
+  }
+
   inactiveItems.forEach(({ ds }) => applyActiveStyle(ds));
 
   const color = CAPABILITY_COLORS[capName] || INACTIVE_COLOR;
