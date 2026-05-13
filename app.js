@@ -1015,7 +1015,9 @@ function renderChart() {
         x: {
           grid: { color: GRID_COLOR },
           ticks: { color: "#808690", font: { size: chartFontSize(11) } },
-          min: dateBounds.startLabel || undefined,
+          // Pace clips its own x-axis to the data range; other modes follow the
+          // global date-range dropdown bounds.
+          min: isPace ? PACE_CHART_START : (dateBounds.startLabel || undefined),
           max: dateBounds.endLabel || undefined,
         },
         y: yScale,
@@ -1636,7 +1638,7 @@ function renderInfoArea() {
     methodologyText =
       'Pace of Progress shows how fast frontier benchmark scores are moving, averaged across 16 benchmarks spanning 6 capabilities. The headline line is the average quarterly increase in best-known score; the bar chart breaks the last 12 months down by capability. ' +
       '<br><br><strong>What counts in a quarter.</strong> A benchmark contributes its frontier movement that quarter, weighted equally with every other benchmark in the cohort. Saturated benchmarks (no longer advancing) contribute zero — that is what saturation looks like, and we keep them in the cohort up to their saturation quarter so the flatline is visible. ' +
-      '<br><br><strong>Caveats.</strong> Visual Reasoning and Computer Use are anchored by a single benchmark each (MMMU-Pro and OSWorld-Verified). Their bars are outlined to flag the small sample. ARC-AGI\'s three generations occasionally co-contribute in transition quarters (Q1 2025, Q2 2026) where one version winds down as its successor spins up. The current quarter is shown dashed because it is incomplete. The line starts at Q4 2024 — earlier quarters had several capabilities at N=0 and the cohort wasn\'t stable enough to read.';
+      '<br><br><strong>Caveats.</strong> Visual Reasoning and Computer Use are anchored by a single benchmark each (MMMU-Pro and OSWorld-Verified). Their bars are outlined to flag the small sample. ARC-AGI\'s three generations occasionally co-contribute in transition quarters (Q1 2025, Q2 2026) where one version winds down as its successor spins up. The current quarter is shown dashed because it is incomplete. The line starts at Q1 2024 — earlier quarters had only one or two capabilities reporting and the comparison would be apples-to-oranges.';
   } else {
     methodologyText = 'Scores use independently verified sources wherever available (Artificial Analysis, Epoch AI, ARC Prize, SWE-bench, Scale AI SEAL), shown as solid dots. Where no independent evaluation exists yet, self-reported model card scores from official lab announcements are used, shown as <strong>hollow dots</strong>.';
   }

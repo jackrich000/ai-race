@@ -28,7 +28,7 @@ function buildBench(scoresByLab) {
 // ─── Tests ───────────────────────────────────────────────────
 
 describe("computePaceSeries — line series", () => {
-  it("clips to PACE_CHART_START (Q4 2024) and runs through now", () => {
+  it("clips to PACE_CHART_START (Q1 2024) and runs through now", () => {
     const BENCHMARKS = {
       "hle": buildBench({ openai: [10, 20, 30, 40, 50, 55, 60, 62, 64, 65] }),
     };
@@ -39,7 +39,7 @@ describe("computePaceSeries — line series", () => {
       cohort: ["hle"],
     });
 
-    expect(lineSeries[0].quarter).toBe("Q4 2024");
+    expect(lineSeries[0].quarter).toBe("Q1 2024");
     expect(lineSeries[lineSeries.length - 1].quarter).toBe("Q2 2026");
   });
 
@@ -234,7 +234,7 @@ describe("PACE_COHORT", () => {
 });
 
 describe("PACE_CHART_START", () => {
-  it("is Q4 2024", () => {
-    expect(PACE_CHART_START).toBe("Q4 2024");
+  it("is Q1 2024", () => {
+    expect(PACE_CHART_START).toBe("Q1 2024");
   });
 });
