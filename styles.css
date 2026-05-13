@@ -185,13 +185,15 @@ main {
   position: relative;
 }
 
-/* Chart citation line */
+/* Chart citation line — info icon on the left, source text follows. Right side
+   reserved for the absolutely-positioned .chart-actions cluster. */
 .chart-citation {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 0.35rem;
   padding-top: 0.75rem;
+  padding-right: 90px;
   font-size: 0.7rem;
   color: var(--text-muted);
   flex-shrink: 0;
@@ -274,32 +276,46 @@ main {
 .chart-legend.frontier-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0.4rem 0.85rem;
+  gap: 0.1rem 0.6rem;
   align-items: start;
-  padding-right: 70px;
+  padding-right: 0;
+  padding-top: 0;
+  padding-bottom: 0.6rem;
+  /* Chart-container has 1.5rem top padding; legend itself adds 0.6rem to its
+     bottom. Pull legend up so the visual space above and below the legend
+     within the container is roughly equal (rather than 24px top vs 10px bottom). */
+  margin-top: -0.45rem;
 }
 
 .legend-column {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.1rem;
   min-width: 0; /* allows ellipsis instead of overflow on narrow columns */
 }
 
 .legend-cap-header {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.35rem;
   font-size: 0.6rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
   font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  /* Default colour for the header. Each rendered header span receives an inline
+     `color` override from renderCapabilityHeader — a lightened version of its
+     capability colour. The CSS fallback only applies if the JS override fails. */
   color: var(--text-muted);
   user-select: none;
-  padding: 0.1rem 0.25rem 0.2rem;
+  padding: 0 0.25rem;
+  min-width: 0;
+}
+
+/* Wrap the header text in a span so ellipsis works inside the flex layout */
+.legend-cap-header-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .legend-defeated-link {
@@ -308,11 +324,11 @@ main {
   padding: 0.15rem 0.25rem;
   font-size: 0.65rem;
   color: var(--text-muted);
-  text-decoration: underline dotted;
   cursor: pointer;
   text-align: left;
   font-family: inherit;
   white-space: nowrap;
+  text-decoration: none;
 }
 
 .legend-defeated-link:hover {
@@ -321,7 +337,13 @@ main {
 
 .legend-defeated-link.isolated {
   color: var(--text-primary);
-  text-decoration-style: solid;
+  font-weight: 600;
+}
+
+/* Within the capability-grouped grid, only the capability header carries the
+   coloured dot; the active benchmark name sits below as plain text. */
+.chart-legend.frontier-grid .legend-item .legend-dot {
+  display: none;
 }
 
 /* In the grid layout, individual benchmark buttons need to truncate gracefully */
@@ -362,10 +384,13 @@ main {
   color: #9ca3af;
 }
 
-/* Chart export buttons */
+/* Chart export buttons — pinned to the bottom-right of the chart-container so
+   they overlay the right end of the citation row. The citation row reserves
+   right-padding (set on .chart-citation) so the source text doesn't slide
+   underneath. */
 .chart-actions {
   position: absolute;
-  top: 0.6rem;
+  bottom: 0.6rem;
   right: 0.75rem;
   display: flex;
   gap: 0.35rem;
@@ -725,9 +750,9 @@ main {
 }
 
 .inactive-tooltip-score {
-  font-size: 0.8rem;
-  color: var(--text-primary);
-  font-weight: 500;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 400;
 }
 
 /* Footer */

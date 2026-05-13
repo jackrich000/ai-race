@@ -127,11 +127,11 @@ function updateCitationLine() {
   if (!el) return;
   const sources = getVisibleSources();
   el.innerHTML =
-    `<span>Source: ${sources.join(", ")}</span>` +
     `<button class="chart-action-btn" id="citationInfoBtn" title="View methodology">` +
     `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">` +
     `<circle cx="8" cy="8" r="6.25"/><path d="M8 7v4"/><circle cx="8" cy="5" r="0.5" fill="currentColor" stroke="none"/>` +
-    `</svg></button>`;
+    `</svg></button>` +
+    `<span>Source: ${sources.join(", ")}</span>`;
   document.getElementById("citationInfoBtn").addEventListener("click", () => {
     const target = document.getElementById("methodologySection") || document.getElementById("infoCard");
     if (target) target.scrollIntoView({ behavior: "smooth" });
@@ -257,18 +257,13 @@ function renderLabPills(container) {
   });
   container.appendChild(allBtn);
 
-  // One pill per lab
+  // One pill per lab. The coloured dot was removed — lab colours only matter
+  // in the race-mode chart; in frontier mode they're visual noise on the filter.
   for (const [key, lab] of Object.entries(LABS)) {
     const btn = document.createElement("button");
     btn.className = `filter-pill${key === selectedLab ? " active" : ""}`;
     btn.dataset.key = key;
-
-    const dot = document.createElement("span");
-    dot.className = "pill-dot";
-    dot.style.backgroundColor = lab.color;
-
-    btn.appendChild(dot);
-    btn.appendChild(document.createTextNode(lab.name));
+    btn.textContent = lab.name;
 
     btn.addEventListener("click", () => {
       selectedLab = key;
@@ -914,6 +909,21 @@ function renderFrontierGrid(container, activeItems, inactiveItems) {
   }
 }
 
+// Blend a hex colour with white by `mix` proportion (0-1). Used to derive the
+// lighter "header" hue from the saturated capability line colour — a 0.45 mix
+// gives a pastel header that reads as the capability without competing
+// with the white-on-dark active benchmark name below it.
+function lightenHex(hex, mix) {
+  const c = hex.replace("#", "");
+  const r = parseInt(c.slice(0, 2), 16);
+  const g = parseInt(c.slice(2, 4), 16);
+  const b = parseInt(c.slice(4, 6), 16);
+  const nr = Math.round(r + (255 - r) * mix);
+  const ng = Math.round(g + (255 - g) * mix);
+  const nb = Math.round(b + (255 - b) * mix);
+  return "#" + [nr, ng, nb].map(v => v.toString(16).padStart(2, "0")).join("");
+}
+
 function renderFlatLegend(container, activeItems, inactiveItems, isMobile) {
   activeItems.forEach(({ ds, idx }) => {
     container.appendChild(createLegendButton(ds, idx, false));
@@ -940,13 +950,13 @@ function renderFlatLegend(container, activeItems, inactiveItems, isMobile) {
 function renderCapabilityHeader(capName) {
   const header = document.createElement("div");
   header.className = "legend-cap-header";
-
-  const dot = document.createElement("span");
-  dot.className = "legend-dot";
-  dot.style.backgroundColor = CAPABILITY_COLORS[capName] || "#6c9eff";
-  header.appendChild(dot);
-
-  header.appendChild(document.createTextNode(capName));
+  // Text in a span so text-overflow: ellipsis works inside the flex layout.
+  const text = document.createElement("span");
+  text.className = "legend-cap-header-text";
+  text.textContent = capName;
+  const capColor = CAPABILITY_COLORS[capName];
+  if (capColor) text.style.color = lightenHex(capColor, 0.45);
+  header.appendChild(text);
   return header;
 }
 
@@ -1391,41 +1401,62 @@ function renderInfoArea() {
       `;
     }
   } else {
+    // Group benchmarks by capability in CAPABILITIES order. Within each
+    // capability: active first, then inactive (mirrors the legend's
+    // header \u2192 active \u2192 "N defeated" structure).
+    const benchKeysByCapability = {};
+    for (const cap of CAPABILITIES) benchKeysByCapability[cap] = { active: [], inactive: [] };
     for (const [key, bench] of Object.entries(BENCHMARKS)) {
-      const isOpen = false;
-      const isInactive = !isBenchmarkActive(key, filterEnd);
       const meta = BENCHMARK_META[key];
-      const color = CAPABILITY_COLORS[meta?.capability] || INACTIVE_COLOR;
+      if (!meta || !benchKeysByCapability[meta.capability]) continue;
+      const isInactive = !isBenchmarkActive(key, filterEnd);
+      benchKeysByCapability[meta.capability][isInactive ? "inactive" : "active"].push(key);
+    }
 
-      // Status badge
-      let statusBadge = "";
-      if (isInactive && meta.status === "deprecated") {
-        statusBadge = `<span class="status-badge deprecated">Deprecated ${meta.activeUntil}</span>`;
-      } else if (isInactive && meta.status === "saturated") {
-        statusBadge = `<span class="status-badge saturated">Saturated ${meta.activeUntil}</span>`;
-      }
+    for (const cap of CAPABILITIES) {
+      const group = benchKeysByCapability[cap];
+      const orderedKeys = [...group.active, ...group.inactive];
+      for (const key of orderedKeys) {
+        const bench = BENCHMARKS[key];
+        const isOpen = false;
+        const isInactive = !isBenchmarkActive(key, filterEnd);
+        const meta = BENCHMARK_META[key];
+        const capColor = CAPABILITY_COLORS[meta?.capability] || INACTIVE_COLOR;
+        // Capability label always reflects the capability, regardless of lifecycle.
+        const badgeColor = lightenHex(capColor, 0.45);
+        // Dot mirrors the chart line colour \u2014 grey for inactive, capability colour for active.
+        const dotColor = isInactive ? INACTIVE_COLOR : capColor;
 
-      // Description with inactive reason
-      let description = bench.description;
-      if (isInactive && meta.inactiveReason) {
-        description += ` <em style="color:var(--text-muted);">${meta.inactiveReason}.</em>`;
-      }
+        // Status badge
+        let statusBadge = "";
+        if (isInactive && meta.status === "deprecated") {
+          statusBadge = `<span class="status-badge deprecated">Deprecated ${meta.activeUntil}</span>`;
+        } else if (isInactive && meta.status === "saturated") {
+          statusBadge = `<span class="status-badge saturated">Saturated ${meta.activeUntil}</span>`;
+        }
 
-      html += `
-        <div class="benchmark-item" data-bench="${key}">
-          <button class="benchmark-item-header" aria-expanded="${isOpen}">
-            <span class="pill-dot" style="background-color: ${isInactive ? INACTIVE_COLOR : color}"></span>
-            <span class="benchmark-item-name">${bench.name}</span>
-            <span class="category-badge">${bench.capability}</span>
-            ${statusBadge}
-            <span class="expand-icon">${isOpen ? "\u2212" : "+"}</span>
-          </button>
-          <div class="benchmark-item-detail"${isOpen ? "" : " hidden"}>
-            <p>${description}</p>
-            <a href="${bench.link}" target="_blank" rel="noopener">Learn more &rarr;</a>
+        // Description with inactive reason
+        let description = bench.description;
+        if (isInactive && meta.inactiveReason) {
+          description += ` <em style="color:var(--text-muted);">${meta.inactiveReason}.</em>`;
+        }
+
+        html += `
+          <div class="benchmark-item" data-bench="${key}">
+            <button class="benchmark-item-header" aria-expanded="${isOpen}">
+              <span class="pill-dot" style="background-color: ${dotColor}"></span>
+              <span class="benchmark-item-name">${bench.name}</span>
+              <span class="category-badge" style="color: ${badgeColor}; background: transparent">${bench.capability}</span>
+              ${statusBadge}
+              <span class="expand-icon">${isOpen ? "\u2212" : "+"}</span>
+            </button>
+            <div class="benchmark-item-detail"${isOpen ? "" : " hidden"}>
+              <p>${description}</p>
+              <a href="${bench.link}" target="_blank" rel="noopener">Learn more &rarr;</a>
+            </div>
           </div>
-        </div>
-      `;
+        `;
+      }
     }
   }
 
@@ -1770,27 +1801,24 @@ function buildExportCanvas() {
     for (let i = 0; i < columns.length; i++) {
       const col = columns[i];
       const colX = pad + i * colW;
-      const textMaxW = colW - colPadR - dotR * 2 - dotTextGap;
+      const colTextMaxW = colW - colPadR;
+      const capColor = CAPABILITY_COLORS[col.cap] || "#6c9eff";
+
       let rowY = pad + rowH * 0.6;
 
-      // Capability header: dot + small-caps label
-      const capColor = CAPABILITY_COLORS[col.cap] || "#6c9eff";
-      ctx.beginPath();
-      ctx.arc(colX + dotR, rowY, dotR, 0, Math.PI * 2);
-      ctx.fillStyle = capColor;
-      ctx.fill();
-      ctx.font = `bold ${smallFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-      ctx.fillStyle = "#808690";
+      // Capability header: uppercase, in a lightened version of the capability colour
+      ctx.font = `700 ${smallFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+      ctx.fillStyle = lightenHex(capColor, 0.45);
       ctx.textAlign = "left";
-      const headerLabel = ellipsize(col.cap.toUpperCase(), textMaxW);
-      ctx.fillText(headerLabel, colX + dotR * 2 + dotTextGap, rowY + smallFontSize * 0.35);
+      const headerLabel = ellipsize(col.cap.toUpperCase(), colTextMaxW);
+      ctx.fillText(headerLabel, colX, rowY + smallFontSize * 0.35);
       rowY += rowH;
 
-      // Active benchmarks: capability-coloured text (matches chart line colour)
+      // Active benchmark name(s)
       ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
       for (const { ds } of col.active) {
         ctx.fillStyle = "#d4d6dc";
-        ctx.fillText(ellipsize(ds.label, textMaxW + dotR * 2 + dotTextGap), colX, rowY + fontSize * 0.35);
+        ctx.fillText(ellipsize(ds.label, colTextMaxW), colX, rowY + fontSize * 0.35);
         rowY += rowH;
       }
 
