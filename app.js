@@ -28,6 +28,9 @@ const BENCHMARK_SOURCE_MAP = {
   "math-l5":       "Epoch AI",
   "osworld-verified": "Epoch AI",
   "mmmu-pro":      "Artificial Analysis",
+  "mmlu-pro":      "Artificial Analysis",
+  "aider-polyglot": "Epoch AI",
+  "terminal-bench-2-0": "Epoch AI",
 };
 
 const COST_SOURCE = "Artificial Analysis";
@@ -100,7 +103,7 @@ function getVisibleSources() {
 
   const benchKeys = currentMode === "race"
     ? [currentBenchmark]
-    : Object.keys(BENCHMARKS);
+    : Object.keys(BENCHMARKS).filter(k => isInChartMode(k, currentMode));
 
   const sourceOrder = [
     "Artificial Analysis", "Epoch AI", "ARC Prize",
@@ -143,9 +146,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     showLoading(true);
     await loadData(); // from data-loader.js
-    // Default to first active benchmark key
+    // Default to first active benchmark key that's eligible for Race mode.
     if (!currentBenchmark || !BENCHMARKS[currentBenchmark]) {
-      currentBenchmark = Object.keys(BENCHMARKS).find(k => isBenchmarkActive(k, getFilterEndDate())) || Object.keys(BENCHMARKS)[0];
+      const filterEnd = getFilterEndDate();
+      currentBenchmark = Object.keys(BENCHMARKS).find(k => isBenchmarkActive(k, filterEnd) && isInChartMode(k, "race"))
+        || Object.keys(BENCHMARKS).find(k => isInChartMode(k, "race"))
+        || Object.keys(BENCHMARKS)[0];
     }
     populateDateRangeYears();
     renderModeToggle();
@@ -216,9 +222,10 @@ function renderFilterPills() {
 function renderBenchmarkPills(container) {
   const filterEnd = getFilterEndDate();
 
-  // Only show active benchmarks in Lab Race
+  // Only show active benchmarks in Lab Race, and only those eligible for Race
   for (const [key, bench] of Object.entries(BENCHMARKS)) {
     if (!isBenchmarkActive(key, filterEnd)) continue;
+    if (!isInChartMode(key, "race")) continue;
 
     const btn = document.createElement("button");
     btn.className = `filter-pill${key === currentBenchmark ? " active" : ""}`;
@@ -243,9 +250,9 @@ function renderBenchmarkPills(container) {
     container.appendChild(btn);
   }
 
-  // If current benchmark is inactive, switch to first active one
-  if (!isBenchmarkActive(currentBenchmark, filterEnd)) {
-    const firstActive = Object.keys(BENCHMARKS).find(k => isBenchmarkActive(k, filterEnd));
+  // If current benchmark is inactive or not race-eligible, switch to first active one
+  if (!isBenchmarkActive(currentBenchmark, filterEnd) || !isInChartMode(currentBenchmark, "race")) {
+    const firstActive = Object.keys(BENCHMARKS).find(k => isBenchmarkActive(k, filterEnd) && isInChartMode(k, "race"));
     if (firstActive) {
       currentBenchmark = firstActive;
       container.querySelector(".filter-pill")?.classList.add("active");
@@ -408,7 +415,9 @@ function buildFrontierDatasets() {
   const labKeys = selectedLab ? [selectedLab] : Object.keys(LABS);
   const filterEnd = getFilterEndDate();
 
-  return Object.entries(BENCHMARKS).map(([benchKey, benchData]) => {
+  return Object.entries(BENCHMARKS)
+    .filter(([benchKey]) => isInChartMode(benchKey, "frontier"))
+    .map(([benchKey, benchData]) => {
     const isInactive = !isBenchmarkActive(benchKey, filterEnd);
     const meta = BENCHMARK_META[benchKey];
 
@@ -1471,6 +1480,7 @@ function renderInfoArea() {
     const benchKeysByCapability = {};
     for (const cap of CAPABILITIES) benchKeysByCapability[cap] = { active: [], inactive: [] };
     for (const [key, bench] of Object.entries(BENCHMARKS)) {
+      if (!isInChartMode(key, currentMode)) continue;
       const meta = BENCHMARK_META[key];
       if (!meta || !benchKeysByCapability[meta.capability]) continue;
       const isInactive = !isBenchmarkActive(key, filterEnd);

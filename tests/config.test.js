@@ -4,6 +4,7 @@ const {
   generateTimeLabels,
   compareQuarters,
   isBenchmarkActive,
+  isInChartMode,
   BENCHMARK_META,
   CAPABILITIES,
   COST_BENCHMARK_META,
@@ -86,15 +87,15 @@ describe("isBenchmarkActive", () => {
 describe("BENCHMARK_META", () => {
   const expectedKeys = [
     "gpqa", "arc-agi-2", "arc-agi-3", "hle", "swe-bench-pro", "aime", "frontiermath",
-    "osworld-verified", "mmmu-pro",
-    "humaneval", "arc-agi-1", "swe-bench-verified", "math-l5",
+    "osworld-verified", "mmmu-pro", "terminal-bench-2-0",
+    "humaneval", "arc-agi-1", "swe-bench-verified", "aider-polyglot", "mmlu-pro", "math-l5",
   ];
 
-  it("has all 13 expected benchmark keys", () => {
+  it("has all 16 expected benchmark keys", () => {
     for (const key of expectedKeys) {
       expect(BENCHMARK_META).toHaveProperty(key);
     }
-    expect(Object.keys(BENCHMARK_META)).toHaveLength(13);
+    expect(Object.keys(BENCHMARK_META)).toHaveLength(16);
   });
 
   it("arc-agi-3 is active and anchors Novel Problem Solving", () => {
@@ -143,6 +144,36 @@ describe("BENCHMARK_META", () => {
         expect(meta.activeUntil).toMatch(/^Q[1-4] \d{4}$/);
       }
     }
+  });
+});
+
+// ─── chartModes ──────────────────────────────────────────────
+
+describe("chartModes / isInChartMode", () => {
+  it("benchmarks without chartModes default to every mode", () => {
+    expect(isInChartMode("gpqa", "frontier")).toBe(true);
+    expect(isInChartMode("gpqa", "race")).toBe(true);
+    expect(isInChartMode("gpqa", "pace")).toBe(true);
+    expect(isInChartMode("hle", "frontier")).toBe(true);
+    expect(isInChartMode("hle", "race")).toBe(true);
+  });
+
+  it("aider-polyglot and mmlu-pro appear on Frontier + Pace but not Race", () => {
+    for (const key of ["aider-polyglot", "mmlu-pro"]) {
+      expect(isInChartMode(key, "frontier")).toBe(true);
+      expect(isInChartMode(key, "pace")).toBe(true);
+      expect(isInChartMode(key, "race")).toBe(false);
+    }
+  });
+
+  it("terminal-bench-2-0 is Pace-only", () => {
+    expect(isInChartMode("terminal-bench-2-0", "pace")).toBe(true);
+    expect(isInChartMode("terminal-bench-2-0", "frontier")).toBe(false);
+    expect(isInChartMode("terminal-bench-2-0", "race")).toBe(false);
+  });
+
+  it("unknown benchmark keys return false", () => {
+    expect(isInChartMode("does-not-exist", "frontier")).toBe(false);
   });
 });
 
