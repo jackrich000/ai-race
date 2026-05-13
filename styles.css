@@ -814,6 +814,9 @@ footer {
   }
 
   .legend-cap-pill {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3rem;
     background: none;
     border: none;
     padding: 0.3rem 0.35rem;
@@ -823,7 +826,14 @@ footer {
     text-transform: uppercase;
     cursor: pointer;
     font-family: inherit;
-    /* Inline color override comes from renderFrontierMobile per pill. */
+    /* .legend-cap-name carries the lightened capability colour (set inline). */
+  }
+
+  .legend-cap-pill .legend-bench-name {
+    font-weight: 400;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--text-muted, #808690);
   }
 
   .legend-cap-pill.hidden {

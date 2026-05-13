@@ -894,16 +894,27 @@ function renderFrontierMobile(container, activeItems) {
   for (const cap of CAPABILITIES) {
     const items = grouped[cap].active;
     if (items.length === 0) continue;
-    const { idx } = items[0];
+    const { idx, ds } = items[0];
+    const benchName = BENCHMARK_META[ds._benchKey]?.name || "";
 
     const btn = document.createElement("button");
     btn.className = "legend-cap-pill";
     if (!chart.isDatasetVisible(idx)) btn.classList.add("hidden");
-    btn.textContent = cap;
-    btn.title = cap;
+    btn.title = benchName ? `${cap} · ${benchName}` : cap;
 
     const capColor = CAPABILITY_COLORS[cap];
-    if (capColor) btn.style.color = lightenHex(capColor, 0.45);
+    const capSpan = document.createElement("span");
+    capSpan.className = "legend-cap-name";
+    capSpan.textContent = cap;
+    if (capColor) capSpan.style.color = lightenHex(capColor, 0.45);
+    btn.appendChild(capSpan);
+
+    if (benchName) {
+      const benchSpan = document.createElement("span");
+      benchSpan.className = "legend-bench-name";
+      benchSpan.textContent = benchName;
+      btn.appendChild(benchSpan);
+    }
 
     btn.addEventListener("click", () => {
       if (isolatedCapability !== null) {
