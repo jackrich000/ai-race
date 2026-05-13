@@ -1510,8 +1510,8 @@ function renderInfoArea() {
             <button class="benchmark-item-header" aria-expanded="${isOpen}">
               <span class="pill-dot" style="background-color: ${dotColor}"></span>
               <span class="benchmark-item-name">${bench.name}</span>
-              <span class="category-badge" style="color: ${badgeColor}; background: transparent">${bench.capability}</span>
               ${statusBadge}
+              <span class="category-badge" style="color: ${badgeColor}; background: transparent">${bench.capability}</span>
               <span class="expand-icon">${isOpen ? "\u2212" : "+"}</span>
             </button>
             <div class="benchmark-item-detail"${isOpen ? "" : " hidden"}>

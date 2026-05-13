@@ -365,9 +365,7 @@ main {
 .status-badge {
   display: inline-block;
   font-size: 0.65rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-weight: 400;
   padding: 0.12rem 0.45rem;
   border-radius: 100px;
   margin-left: 0.35rem;
@@ -436,9 +434,7 @@ main {
 .category-badge {
   display: inline-block;
   font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-weight: 400;
   background: var(--accent-dim);
   color: var(--accent);
   padding: 0.15rem 0.5rem;
@@ -518,11 +514,12 @@ main {
 
 .benchmark-item-name {
   flex: 1;
+  min-width: 0;
 }
 
 .benchmark-item-header .category-badge {
-  margin-left: auto;
-  margin-right: 0.75rem;
+  margin-left: 0.35rem;
+  margin-right: 0.5rem;
 }
 
 .expand-icon {
