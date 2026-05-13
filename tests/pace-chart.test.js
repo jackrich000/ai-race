@@ -135,6 +135,104 @@ describe("computePaceSeries — line series", () => {
   });
 });
 
+describe("computePaceSeries — topMoverByCapability", () => {
+  function cellsWithModel(arr) {
+    return arr.map(v => v == null ? null : { score: v.score, model: v.model, source: "epoch", verified: true, variant: null });
+  }
+
+  it("identifies the model that drove the biggest capability delta", () => {
+    // Coding has 2 benchmarks in Q1 2024:
+    //   bench-A: openai goes from 30 → 50 (delta 20, "GPT-X")
+    //   bench-B: anthropic goes from 40 → 45 (delta 5, "Claude-Y")
+    // Top mover for Coding = bench-A's GPT-X (bigger delta).
+    const BENCHMARKS = {
+      "bench-a": { scores: {
+        openai: cellsWithModel([{ score: 30, model: "GPT-Old" }, { score: 30, model: "GPT-Old" }, { score: 50, model: "GPT-X" }, { score: 50, model: "GPT-X" }, { score: 50, model: "GPT-X" }, { score: 50, model: "GPT-X" }, { score: 50, model: "GPT-X" }, { score: 50, model: "GPT-X" }, { score: 50, model: "GPT-X" }, { score: 50, model: "GPT-X" }]),
+      } },
+      "bench-b": { scores: {
+        anthropic: cellsWithModel([{ score: 40, model: "Claude-Old" }, { score: 40, model: "Claude-Old" }, { score: 45, model: "Claude-Y" }, { score: 45, model: "Claude-Y" }, { score: 45, model: "Claude-Y" }, { score: 45, model: "Claude-Y" }, { score: 45, model: "Claude-Y" }, { score: 45, model: "Claude-Y" }, { score: 45, model: "Claude-Y" }, { score: 45, model: "Claude-Y" }]),
+      } },
+    };
+    const BENCHMARK_META = {
+      "bench-a": { name: "Bench A", status: "active", capability: "Coding" },
+      "bench-b": { name: "Bench B", status: "active", capability: "Coding" },
+    };
+
+    const { lineSeries } = computePaceSeries({
+      BENCHMARKS, BENCHMARK_META, CAPABILITIES, TIME_LABELS, now: "Q2 2026",
+      cohort: ["bench-a", "bench-b"],
+    });
+
+    // Q3 2024 (idx 2) is when both benches' models become the new max.
+    const q3_2024 = lineSeries.find(p => p.quarter === "Q3 2024");
+    expect(q3_2024.topMoverByCapability).toHaveProperty("Coding");
+    expect(q3_2024.topMoverByCapability.Coding.model).toBe("GPT-X");
+    expect(q3_2024.topMoverByCapability.Coding.benchKey).toBe("bench-a");
+    expect(q3_2024.topMoverByCapability.Coding.delta).toBe(20);
+  });
+
+  it("omits capabilities with no positive movement that quarter", () => {
+    // Math benchmark frozen at 80 throughout — no movement.
+    const BENCHMARKS = {
+      "frontiermath": { scores: {
+        openai: cellsWithModel([{ score: 80, model: "GPT" }, { score: 80, model: "GPT" }, { score: 80, model: "GPT" }, { score: 80, model: "GPT" }, { score: 80, model: "GPT" }, { score: 80, model: "GPT" }, { score: 80, model: "GPT" }, { score: 80, model: "GPT" }, { score: 80, model: "GPT" }, { score: 80, model: "GPT" }]),
+      } },
+    };
+    const BENCHMARK_META = { "frontiermath": { name: "FrontierMath", status: "active", capability: "Math" } };
+
+    const { lineSeries } = computePaceSeries({
+      BENCHMARKS, BENCHMARK_META, CAPABILITIES, TIME_LABELS, now: "Q2 2026",
+      cohort: ["frontiermath"],
+    });
+
+    for (const point of lineSeries) {
+      expect(point.topMoverByCapability).not.toHaveProperty("Math");
+    }
+  });
+
+  it("attributes the mover to the lab whose fresh score made the new max, not a carry-forward", () => {
+    // OpenAI scores 80 at Q1 2024, then nothing. Anthropic scores 90 at Q3 2024.
+    // At Q3 2024, frontier jumps 80 → 90, mover should be Anthropic/Claude-3.
+    const BENCHMARKS = {
+      "bench": { scores: {
+        openai:    cellsWithModel([{ score: 80, model: "GPT-4" }, { score: 80, model: "GPT-4" }, { score: 80, model: "GPT-4" }, { score: 80, model: "GPT-4" }, { score: 80, model: "GPT-4" }, { score: 80, model: "GPT-4" }, { score: 80, model: "GPT-4" }, { score: 80, model: "GPT-4" }, { score: 80, model: "GPT-4" }, { score: 80, model: "GPT-4" }]),
+        anthropic: [null, null, { score: 90, model: "Claude-3", source: "epoch", verified: true, variant: null }, null, null, null, null, null, null, null],
+      } },
+    };
+    const BENCHMARK_META = { "bench": { name: "Bench", status: "active", capability: "Coding" } };
+
+    const { lineSeries } = computePaceSeries({
+      BENCHMARKS, BENCHMARK_META, CAPABILITIES, TIME_LABELS, now: "Q2 2026",
+      cohort: ["bench"],
+    });
+
+    const q3_2024 = lineSeries.find(p => p.quarter === "Q3 2024");
+    expect(q3_2024.topMoverByCapability.Coding.model).toBe("Claude-3");
+    expect(q3_2024.topMoverByCapability.Coding.lab).toBe("anthropic");
+    expect(q3_2024.topMoverByCapability.Coding.delta).toBe(10);
+  });
+
+  it("includes benchName and capability fields on each contributor", () => {
+    const BENCHMARKS = {
+      "hle": buildBench({ openai: [10, 20, 30, 40, 50, 55, 60, 65, 70, 75] }),
+    };
+    const BENCHMARK_META = { "hle": { name: "Humanity's Last Exam", status: "active", capability: "Expert Reasoning" } };
+
+    const { lineSeries } = computePaceSeries({
+      BENCHMARKS, BENCHMARK_META, CAPABILITIES, TIME_LABELS, now: "Q2 2026",
+      cohort: ["hle"],
+    });
+
+    const point = lineSeries.find(p => p.n > 0);
+    expect(point.contributors[0]).toMatchObject({
+      benchKey: "hle",
+      benchName: "Humanity's Last Exam",
+      capability: "Expert Reasoning",
+    });
+    expect(point.contributors[0].model).toBe("test");
+  });
+});
+
 describe("computePaceSeries — bar series", () => {
   it("averages over the last 12 months (4 trailing quarters)", () => {
     // hle: Q3 2025 to Q2 2026 deltas of [2, 3, 4, 5] → mean = 3.5

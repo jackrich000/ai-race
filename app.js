@@ -547,12 +547,13 @@ function getPaceSeries() {
 function buildPaceLineDatasets() {
   const { lineSeries } = getPaceSeries();
   // Map the pace series onto the full TIME_LABELS x-axis. Earlier quarters
-  // (pre-PACE_CHART_START) remain null so the line starts at Q4 2024.
+  // (pre-PACE_CHART_START) remain null so the line starts at Q1 2024.
   const quarterToValue = Object.fromEntries(lineSeries.map(p => [p.quarter, p]));
   const data = TIME_LABELS.map(q => quarterToValue[q]?.value ?? null);
   const partialFlags = TIME_LABELS.map(q => quarterToValue[q]?.isPartial === true);
   const contributorsByIdx = TIME_LABELS.map(q => quarterToValue[q]?.contributors ?? []);
   const nByIdx = TIME_LABELS.map(q => quarterToValue[q]?.n ?? 0);
+  const topMoversByIdx = TIME_LABELS.map(q => quarterToValue[q]?.topMoverByCapability ?? {});
 
   return [{
     label: "Frontier pace",
@@ -574,6 +575,7 @@ function buildPaceLineDatasets() {
     _paceContributors: contributorsByIdx,
     _paceN: nByIdx,
     _paceIsPartial: partialFlags,
+    _paceTopMovers: topMoversByIdx,
   }];
 }
 
@@ -931,8 +933,23 @@ function renderChart() {
         if (val === null) return null;
         const n = context.dataset._paceN?.[context.dataIndex] ?? 0;
         const isPartial = context.dataset._paceIsPartial?.[context.dataIndex] === true;
+        const topMovers = context.dataset._paceTopMovers?.[context.dataIndex] || {};
         const lines = [`${val.toFixed(1)} pp / quarter (avg across ${n} benchmarks)`];
         if (isPartial) lines.push("Current quarter — in progress");
+
+        // Per-capability top movers in canonical order, biggest delta first.
+        const moverEntries = CAPABILITIES
+          .map(cap => topMovers[cap])
+          .filter(Boolean)
+          .sort((a, b) => b.delta - a.delta);
+        if (moverEntries.length > 0) {
+          lines.push(""); // blank separator
+          lines.push("Top movers this quarter");
+          for (const m of moverEntries) {
+            const sign = m.delta >= 0 ? "+" : "";
+            lines.push(`  ${m.capability}: ${m.model} (${m.benchName} ${sign}${m.delta.toFixed(1)}pp)`);
+          }
+        }
         return lines;
       }
     : function(context) {
