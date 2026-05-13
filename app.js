@@ -28,6 +28,9 @@ const BENCHMARK_SOURCE_MAP = {
   "math-l5":       "Epoch AI",
   "osworld-verified": "Epoch AI",
   "mmmu-pro":      "Artificial Analysis",
+  "mmlu-pro":      "Artificial Analysis",
+  "aider-polyglot": "Epoch AI",
+  "terminal-bench-2-0": "Epoch AI",
 };
 
 const COST_SOURCE = "Artificial Analysis";

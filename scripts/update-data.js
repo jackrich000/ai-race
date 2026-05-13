@@ -67,6 +67,9 @@ const BENCHMARK_START_QUARTER = {
   "arc-agi-3":        "Q1 2026",  // Released as part of ARC Prize 2026
   "swe-bench-pro":    "Q3 2025",  // Scale AI SEAL leaderboard launched
   "osworld-verified": "Q3 2024",  // Original OSWorld launched Q2 2024; first frontier-lab scores Q3 2024
+  "mmlu-pro":         "Q2 2024",  // Released mid-2024 (arxiv.org/abs/2406.01574)
+  "aider-polyglot":   "Q1 2024",  // Earliest Epoch entries Mar 2024
+  "terminal-bench-2-0": "Q3 2025", // Terminal-Bench 2.0 released mid-2025
 };
 
 // Cost of Intelligence: benchmarks with price thresholds
@@ -85,6 +88,8 @@ const EPOCH_BENCHMARK_FILES = {
   "frontiermath.csv":             { key: "frontiermath", scoreCol: "mean_score" },
   "math_level_5.csv":             { key: "math-l5",      scoreCol: "mean_score" },
   "os_world_external.csv":        { key: "osworld-verified", scoreCol: "Score" },
+  "aider_polyglot_external.csv":  { key: "aider-polyglot", scoreCol: "Percent correct" },
+  "terminalbench_external.csv":   { key: "terminal-bench-2-0", scoreCol: "Accuracy mean" },
 };
 
 // Source-level abort thresholds. If a fetcher returns fewer rows than its threshold,
@@ -357,6 +362,19 @@ async function fetchArtificialAnalysis() {
         lab,
         model: modelName,
         score: evals.gpqa * 100,
+        date: releaseDate,
+        source: "artificialanalysis",
+        verified: true,
+      });
+    }
+
+    // MMLU-Pro
+    if (evals.mmlu_pro != null) {
+      results.push({
+        benchmark: "mmlu-pro",
+        lab,
+        model: modelName,
+        score: evals.mmlu_pro * 100,
         date: releaseDate,
         source: "artificialanalysis",
         verified: true,
@@ -962,7 +980,7 @@ async function main() {
   }
 
   // Automated benchmarks managed by this script. Manual seeds (humaneval) are excluded.
-  const automatedBenchmarks = ["swe-bench-verified", "arc-agi-1", "arc-agi-2", "arc-agi-3", "hle", "gpqa", "aime", "frontiermath", "math-l5", "swe-bench-pro", "osworld-verified", "mmmu-pro"];
+  const automatedBenchmarks = ["swe-bench-verified", "arc-agi-1", "arc-agi-2", "arc-agi-3", "hle", "gpqa", "aime", "frontiermath", "math-l5", "swe-bench-pro", "osworld-verified", "mmmu-pro", "mmlu-pro", "aider-polyglot", "terminal-bench-2-0"];
 
   // Compute cumulative best per (benchmark, lab) and build upsert rows
   const allRows = [];

@@ -86,15 +86,15 @@ describe("isBenchmarkActive", () => {
 describe("BENCHMARK_META", () => {
   const expectedKeys = [
     "gpqa", "arc-agi-2", "arc-agi-3", "hle", "swe-bench-pro", "aime", "frontiermath",
-    "osworld-verified", "mmmu-pro",
-    "humaneval", "arc-agi-1", "swe-bench-verified", "math-l5",
+    "osworld-verified", "mmmu-pro", "terminal-bench-2-0",
+    "humaneval", "arc-agi-1", "swe-bench-verified", "aider-polyglot", "mmlu-pro", "math-l5",
   ];
 
-  it("has all 13 expected benchmark keys", () => {
+  it("has all 16 expected benchmark keys", () => {
     for (const key of expectedKeys) {
       expect(BENCHMARK_META).toHaveProperty(key);
     }
-    expect(Object.keys(BENCHMARK_META)).toHaveLength(13);
+    expect(Object.keys(BENCHMARK_META)).toHaveLength(16);
   });
 
   it("arc-agi-3 is active and anchors Novel Problem Solving", () => {
