@@ -72,13 +72,13 @@ These are open questions for the next session. Not pre-decided.
 ## Production integration sketch (when ready)
 
 - Add `lib/pace-chart.js` module mirroring `.scratch-pace-v3.mjs` logic (frontier + lifecycle gate + activity gate + 4Q rolling mean).
-- Add 5 new benchmarks to `lib/config.js` `BENCHMARK_META` with `status` + `activeUntil` fields.
+- Add 4 remaining new benchmarks to `lib/config.js` `BENCHMARK_META` with `status` + `activeUntil` fields. **MMMU-Pro already shipped 2026-05-13** as part of the capability-labels PR (status `active`, capability `Visual Reasoning`).
 - Ingestion changes in `scripts/update-data.js`:
   - **MMLU-Pro**: add `mmlu_pro` to AA fetcher (1 line + meta entry)
-  - **MMMU-Pro**: new fetcher for `/evaluations/mmmu-pro` page-scrape — pattern in `.scratch-pace-phaseA6.mjs` extractMMMUPro() (~50 lines)
+  - **~~MMMU-Pro~~**: shipped 2026-05-13. `fetchArtificialAnalysisMMMUPro()` is in production; Pace can read from `benchmark_scores` directly. 145 verified data points across all 5 labs as of the first run.
   - **Aider Polyglot, SimpleQA Verified, Terminal-Bench 2.0**: add to `EPOCH_BENCHMARK_FILES` dict (3 new entries)
 - New chart component. Methodology copy section.
-- Estimate: 1-2 days once decisions above are settled.
+- Estimate: 1-2 days once decisions above are settled (one item smaller now that MMMU-Pro is done).
 
 ---
 
