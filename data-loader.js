@@ -16,32 +16,40 @@ let costLoadFailed = false;
 async function loadBenchmarkScores() {
   // select=* keeps this query schema-tolerant: if a new column (e.g. model_variant)
   // hasn't been migrated yet, the query still succeeds and the field is undefined.
-  const url = `${SUPABASE_URL}/rest/v1/benchmark_scores?select=*&order=benchmark,lab,quarter`;
+  // Paginate because Supabase caps a single response at 1000 rows; we passed
+  // that threshold when the Pace cohort grew (terminal-bench-2-0, sorted last
+  // alphabetically, was being silently truncated).
+  const PAGE_SIZE = 1000;
+  const rows = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const url = `${SUPABASE_URL}/rest/v1/benchmark_scores?select=*&order=benchmark,lab,quarter&limit=${PAGE_SIZE}&offset=${offset}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-  let response;
-  try {
-    response = await fetch(url, {
-      headers: {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-      signal: controller.signal,
-    });
-  } catch (err) {
+    let response;
+    try {
+      response = await fetch(url, {
+        headers: {
+          "apikey": SUPABASE_ANON_KEY,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        signal: controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err.name === "AbortError") throw new Error("Request timed out");
+      throw err;
+    }
     clearTimeout(timeoutId);
-    if (err.name === "AbortError") throw new Error("Request timed out");
-    throw err;
-  }
-  clearTimeout(timeoutId);
 
-  if (!response.ok) {
-    throw new Error(`Supabase fetch failed: ${response.status} ${response.statusText}`);
-  }
+    if (!response.ok) {
+      throw new Error(`Supabase fetch failed: ${response.status} ${response.statusText}`);
+    }
 
-  const rows = await response.json();
+    const batch = await response.json();
+    rows.push(...batch);
+    if (batch.length < PAGE_SIZE) break;
+  }
 
   // Build quarter → index lookup
   const quarterIndex = {};
