@@ -125,6 +125,8 @@ main {
   color: var(--accent);
 }
 
+.mode-btn .label-short { display: none; }
+
 /* Filter pills (used for both benchmark tabs and lab tabs) */
 .filter-pills {
   display: flex;
@@ -889,6 +891,8 @@ footer {
 
   /* Touch target improvements */
   .mode-btn { padding: 0.5rem 0.75rem; font-size: 0.8rem; }
+  .mode-btn .label-full { display: none; }
+  .mode-btn .label-short { display: inline; }
   .legend-item { padding: 0.3rem 0.35rem; }
   .benchmark-item-header { padding: 0.75rem 0; }
   .copy-icon-btn { padding: 0.4rem; }
