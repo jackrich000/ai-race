@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-const { checkSourceThresholds, detectStreakAlerts } = require("../lib/pipeline.js");
+const { checkSourceThresholds, detectStreakAlerts, buildIssueLabels } = require("../lib/pipeline.js");
 
 // ─── checkSourceThresholds ───────────────────────────────────
 
@@ -204,6 +204,45 @@ describe("detectStreakAlerts", () => {
     const result = detectStreakAlerts(history, { streakThreshold: 2 });
     expect(result.alerts).toEqual([
       { lab: "openai", kind: "no_articles", since: "d1" },
+    ]);
+  });
+});
+
+// ─── buildIssueLabels ────────────────────────────────────────
+
+describe("buildIssueLabels", () => {
+  it("always includes pipeline-report and nothing else for a clean run", () => {
+    expect(buildIssueLabels({})).toEqual(["pipeline-report"]);
+    expect(buildIssueLabels({ totalFlagged: 0, staleLabsCount: 0, hasSourceHealthFailure: false, streakAlertCount: 0 }))
+      .toEqual(["pipeline-report"]);
+  });
+
+  it("adds needs-review when items are flagged or labs are stale", () => {
+    expect(buildIssueLabels({ totalFlagged: 3 })).toEqual(["pipeline-report", "needs-review"]);
+    expect(buildIssueLabels({ staleLabsCount: 1 })).toEqual(["pipeline-report", "needs-review"]);
+  });
+
+  it("adds pipeline-failure on source health failure", () => {
+    expect(buildIssueLabels({ hasSourceHealthFailure: true }))
+      .toEqual(["pipeline-report", "pipeline-failure"]);
+  });
+
+  it("adds pipeline-alert when streak alerts fire (the 2026-05-29 case)", () => {
+    expect(buildIssueLabels({ streakAlertCount: 2 }))
+      .toEqual(["pipeline-report", "pipeline-alert"]);
+  });
+
+  it("combines all labels and keeps pipeline-report first with no duplicates", () => {
+    const labels = buildIssueLabels({
+      totalFlagged: 1,
+      staleLabsCount: 2,
+      hasSourceHealthFailure: true,
+      streakAlertCount: 1,
+    });
+    expect(labels[0]).toBe("pipeline-report");
+    expect(new Set(labels).size).toBe(labels.length);
+    expect(labels).toEqual([
+      "pipeline-report", "needs-review", "pipeline-failure", "pipeline-alert",
     ]);
   });
 });
