@@ -17,7 +17,7 @@ import { fileURLToPath } from "url";
 
 const require = createRequire(import.meta.url);
 const { BENCHMARK_META, LABS, LAB_KEYS, TIME_LABELS, compareQuarters, getPresets } = require("../lib/config.js");
-const { isHarnessVariant, isAcknowledgedConfigVariant, normalizeVariant, shouldRegenerateAnalyses, detectStreakAlerts } = require("../lib/pipeline.js");
+const { isHarnessVariant, isAcknowledgedConfigVariant, normalizeVariant, shouldRegenerateAnalyses, detectStreakAlerts, buildIssueLabels } = require("../lib/pipeline.js");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -643,31 +643,95 @@ function buildReport({ changes, flagged, rejected, unknownVariants, extractResul
     title += ` + ${streakAlerts.length} streak alert${streakAlerts.length !== 1 ? "s" : ""}`;
   }
 
-  const labelSet = new Set(["pipeline-report"]);
-  if (totalFlagged > 0 || staleLabs.length > 0) labelSet.add("needs-review");
-  if (hasSourceHealthFailure) labelSet.add("pipeline-failure");
-  if (streakAlerts.length > 0) labelSet.add("pipeline-alert");
-  const labels = [...labelSet].join(",");
+  const labels = buildIssueLabels({
+    totalFlagged,
+    staleLabsCount: staleLabs.length,
+    hasSourceHealthFailure,
+    streakAlertCount: streakAlerts.length,
+  }).join(",");
 
   return { title, body: parts.join("\n"), labels };
 }
 
+// Labels the pipeline report may carry, with color + description used only when
+// a label needs to be created. Creating is check-then-create (never --force) so
+// an already-existing label keeps its own color/description.
+const LABEL_DEFS = {
+  "pipeline-report":  { color: "0e8a16", description: "Automated weekly pipeline run report" },
+  "needs-review":     { color: "fbca04", description: "Pipeline surfaced items needing manual review" },
+  "pipeline-alert":   { color: "d93f0b", description: "Pipeline streak alert: a lab stopped yielding articles or scores" },
+  "pipeline-failure": { color: "b60205", description: "Pipeline source-health failure: a data source returned below its abort threshold" },
+};
+
+/**
+ * Ensure each named GitHub label exists, creating any that are missing.
+ * Idempotent and non-fatal: a label we cannot create is logged and skipped
+ * (postGitHubIssue retries unlabelled if a create gap remains).
+ */
+function ensureLabelsExist(labelNames) {
+  if (!labelNames.length) return;
+  const { execFileSync } = require("child_process");
+
+  let existing = new Set();
+  try {
+    const out = execFileSync("gh", ["label", "list", "--limit", "500", "--json", "name", "-q", ".[].name"], {
+      cwd: PROJECT_ROOT, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8",
+    });
+    existing = new Set(out.split("\n").map(s => s.trim()).filter(Boolean));
+  } catch (err) {
+    console.warn(`  Could not list GitHub labels (${(err.message || "").substring(0, 120)}); attempting label creation defensively.`);
+  }
+
+  for (const name of labelNames) {
+    if (existing.has(name)) continue;
+    const def = LABEL_DEFS[name] || { color: "ededed", description: "" };
+    try {
+      execFileSync("gh", ["label", "create", name, "--color", def.color, "--description", def.description], {
+        cwd: PROJECT_ROOT, stdio: "pipe",
+      });
+      console.log(`  Created missing GitHub label: ${name}`);
+    } catch (err) {
+      // May have been created concurrently, or we lack permission — non-fatal.
+      console.warn(`  Could not create label "${name}": ${(err.message || "").substring(0, 120)}`);
+    }
+  }
+}
+
 /**
  * Post a GitHub issue using the gh CLI.
+ *
+ * Hardened so a missing/bad label can never again silently eat the whole report
+ * (the 2026-05-29 failure): labels are ensured-to-exist first, and a label-related
+ * post failure retries once WITHOUT labels. Any other failure (bad token, rate
+ * limit, malformed body) is surfaced loudly rather than masked as "posted".
  */
 function postGitHubIssue(title, body, labels) {
   const tmpFile = path.resolve(PROJECT_ROOT, ".pipeline-report-body.md");
+  const { execFileSync } = require("child_process");
+  const labelList = (labels || "").split(",").map(s => s.trim()).filter(Boolean);
 
   try {
     fs.writeFileSync(tmpFile, body, "utf8");
-    const { execFileSync } = require("child_process");
-    execFileSync("gh", ["issue", "create", "--title", title, "--body-file", tmpFile, "--label", labels], {
-      cwd: PROJECT_ROOT,
-      stdio: "pipe",
-    });
-    console.log(`\n  Report posted: ${title}`);
+
+    // A missing label makes `gh issue create` fail hard, so register first.
+    ensureLabelsExist(labelList);
+
+    const baseArgs = ["issue", "create", "--title", title, "--body-file", tmpFile];
+    try {
+      const args = labelList.length ? [...baseArgs, "--label", labelList.join(",")] : baseArgs;
+      execFileSync("gh", args, { cwd: PROJECT_ROOT, stdio: "pipe" });
+      console.log(`\n  Report posted: ${title}`);
+    } catch (err) {
+      const detail = `${err.stderr ? err.stderr.toString() : ""}${err.message || ""}`;
+      const labelRelated = labelList.length > 0 && /label/i.test(detail);
+      if (!labelRelated) throw err; // Not a label problem — do not mask it.
+      console.warn(`\n  Posting with labels failed (${detail.substring(0, 160)}); retrying without labels.`);
+      execFileSync("gh", baseArgs, { cwd: PROJECT_ROOT, stdio: "pipe" });
+      console.log(`\n  Report posted WITHOUT labels: ${title}`);
+    }
   } catch (err) {
-    console.warn(`\n  Failed to post GitHub issue: ${err.message.substring(0, 200)}`);
+    const detail = err && err.stderr ? err.stderr.toString() : (err && err.message ? err.message : String(err));
+    console.error(`\n  Failed to post GitHub issue: ${detail.substring(0, 300)}`);
     console.log("\n  Report body (printed to console as fallback):\n");
     console.log(body);
   } finally {

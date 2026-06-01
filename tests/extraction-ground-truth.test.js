@@ -17,15 +17,17 @@ describe("ground truth benchmark normalization", () => {
     expect(normalizeBenchmarkName("ARC-AGI-2").key).toBe("arc-agi-2");
     expect(normalizeBenchmarkName("GPQA Diamond").key).toBe("gpqa");
 
+    // Tracked benchmarks (aliased in config.js)
+    expect(normalizeBenchmarkName("OSWorld-Verified").key).toBe("osworld-verified");
+    expect(normalizeBenchmarkName("MMMU-Pro").key).toBe("mmmu-pro");
+
     // Untracked benchmarks should return null key
     expect(normalizeBenchmarkName("Terminal-Bench 2.0").key).toBeNull();
-    expect(normalizeBenchmarkName("OSWorld-Verified").key).toBeNull();
     expect(normalizeBenchmarkName("τ2-bench Retail").key).toBeNull();
     expect(normalizeBenchmarkName("MCP-Atlas").key).toBeNull();
     expect(normalizeBenchmarkName("BrowseComp").key).toBeNull();
     expect(normalizeBenchmarkName("Finance Agent v1.1").key).toBeNull();
     expect(normalizeBenchmarkName("GDPval-AA Elo").key).toBeNull();
-    expect(normalizeBenchmarkName("MMMU-Pro").key).toBeNull();
     expect(normalizeBenchmarkName("MMMLU").key).toBeNull();
   });
 
@@ -33,14 +35,15 @@ describe("ground truth benchmark normalization", () => {
     expect(normalizeBenchmarkName("SWE-Bench Pro (Public)").key).toBe("swe-bench-pro");
     expect(normalizeBenchmarkName("GPQA Diamond").key).toBe("gpqa");
     expect(normalizeBenchmarkName("HLE").key).toBe("hle");
+    // Tracked benchmarks (aliased in config.js) — "MMMUPro" tests the no-separator form
+    expect(normalizeBenchmarkName("OSWorld-Verified").key).toBe("osworld-verified");
+    expect(normalizeBenchmarkName("MMMUPro").key).toBe("mmmu-pro");
 
     // Untracked
     expect(normalizeBenchmarkName("Terminal-Bench 2.0").key).toBeNull();
     expect(normalizeBenchmarkName("MCP Atlas").key).toBeNull();
     expect(normalizeBenchmarkName("Toolathlon").key).toBeNull();
     expect(normalizeBenchmarkName("τ2-bench (telecom)").key).toBeNull();
-    expect(normalizeBenchmarkName("OSWorld-Verified").key).toBeNull();
-    expect(normalizeBenchmarkName("MMMUPro").key).toBeNull();
     expect(normalizeBenchmarkName("OmniDocBench 1.5").key).toBeNull();
     expect(normalizeBenchmarkName("OpenAI MRCR v2 8-needle 64K–128K").key).toBeNull();
     expect(normalizeBenchmarkName("Graphwalks BFS 0K–128K").key).toBeNull();
@@ -58,9 +61,10 @@ describe("ground truth benchmark normalization", () => {
   it("normalizes Google DeepMind Gemini 3.1 Flash-Lite benchmarks", () => {
     expect(normalizeBenchmarkName("Humanity's Last Exam").key).toBe("hle");
     expect(normalizeBenchmarkName("GPQA Diamond").key).toBe("gpqa");
+    // Tracked benchmark (aliased in config.js)
+    expect(normalizeBenchmarkName("MMMU-Pro").key).toBe("mmmu-pro");
 
-    // Untracked
-    expect(normalizeBenchmarkName("MMMU-Pro").key).toBeNull();
+    // Untracked — Video-MMMU is a different benchmark and must stay untracked
     expect(normalizeBenchmarkName("CharXiv Reasoning").key).toBeNull();
     expect(normalizeBenchmarkName("Video-MMMU").key).toBeNull();
     expect(normalizeBenchmarkName("SimpleQA Verified").key).toBeNull();
