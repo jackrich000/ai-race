@@ -680,50 +680,70 @@ function setModeVisibility(mode) {
 }
 
 // ─── Inactivity marker plugin ────────────────────────────────
-// Renders per-dataset in afterDatasetDraw so the marker sits with its inactive line
-// in z-order — active lines drawn later (lower `order` value) cover it where they
-// cross, and tooltips drawn afterwards render on top. Previously used afterDraw, which
-// put the marker above every dataset and every tooltip.
+// Draws the (×) "benchmark retired here" marker on each inactive line at its
+// activeUntil quarter. Markers must sit ABOVE every grey-dashed inactive line
+// (so they read cleanly) but BEHIND the coloured active lines.
+//
+// We can't draw a marker in its own dataset's afterDatasetDraw: a later grey
+// dashed line would paint over it, leaving the (×) muddied into the dashes.
+// Instead, on each default grey pass we redraw the FULL set of grey markers —
+// the pass that fires after the last dashed line lands them all cleanly on top
+// of every dash, while the active lines (lower `order`, drawn afterwards) still
+// cover them where they cross. Tooltips, drawn later still, also stay on top.
+function drawInactivityMarker(ctx, x, y) {
+  const r = 6;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = "#1a1d27";
+  ctx.fill();
+  ctx.strokeStyle = INACTIVE_COLOR;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  const xr = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(x - xr, y - xr);
+  ctx.lineTo(x + xr, y + xr);
+  ctx.moveTo(x + xr, y - xr);
+  ctx.lineTo(x - xr, y + xr);
+  ctx.strokeStyle = INACTIVE_COLOR;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawInactivityMarkerForDataset(chart, ctx, i) {
+  const ds = chart.data.datasets[i];
+  if (!ds._isInactive || !ds._activeUntil) return;
+  if (!chart.isDatasetVisible(i)) return;
+  const qIdx = TIME_LABELS.indexOf(ds._activeUntil);
+  if (qIdx < 0 || ds.data[qIdx] == null) return;
+  const point = chart.getDatasetMeta(i).data[qIdx];
+  if (!point || point.skip) return;
+  drawInactivityMarker(ctx, point.x, point.y);
+}
+
 const inactivityMarkerPlugin = {
   id: "inactivityMarker",
   afterDatasetDraw(chart, args) {
     if (currentMode !== "frontier") return;
     const ds = chart.data.datasets[args.index];
-    if (!ds._isInactive || !ds._activeUntil) return;
-    if (!chart.isDatasetVisible(args.index)) return;
-
-    const qIdx = TIME_LABELS.indexOf(ds._activeUntil);
-    if (qIdx < 0) return;
-    if (ds.data[qIdx] == null) return;
-
-    const meta = chart.getDatasetMeta(args.index);
-    const point = meta.data[qIdx];
-    if (!point || point.skip) return;
-
+    if (!ds._isInactive) return;
     const ctx = chart.ctx;
-    const x = point.x;
-    const y = point.y;
 
-    const r = 6;
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = "#1a1d27";
-    ctx.fill();
-    ctx.strokeStyle = INACTIVE_COLOR;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    // A highlighted/isolated inactive line (order < 1) is drawn after the active
+    // lines; draw just its own marker on top, matching its raised z-order.
+    if (ds.order < 1) {
+      drawInactivityMarkerForDataset(chart, ctx, args.index);
+      return;
+    }
 
-    const xr = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(x - xr, y - xr);
-    ctx.lineTo(x + xr, y + xr);
-    ctx.moveTo(x + xr, y - xr);
-    ctx.lineTo(x - xr, y + xr);
-    ctx.strokeStyle = INACTIVE_COLOR;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.restore();
+    // Default grey-dashed pass: redraw every grey marker so the final dashed
+    // line never paints over one.
+    chart.data.datasets.forEach((d, i) => {
+      if (d._isInactive && d.order >= 1) drawInactivityMarkerForDataset(chart, ctx, i);
+    });
   },
 };
 
