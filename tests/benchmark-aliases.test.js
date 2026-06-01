@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from "vitest";
 
-const { BENCHMARK_ALIASES } = require("../lib/extraction.js");
+const { BENCHMARK_ALIASES, normalizeBenchmarkName } = require("../lib/extraction.js");
 
 // The complete expected alias table. Keys are normalized (lowercase,
 // single-spaced) alias strings; values are { key, confidence }.
@@ -91,6 +91,14 @@ describe("config-derived BENCHMARK_ALIASES", () => {
     const { BENCHMARK_META } = require("../lib/config.js");
     for (const [alias, { key }] of Object.entries(BENCHMARK_ALIASES)) {
       expect(BENCHMARK_META[key], `alias "${alias}" points at unknown benchmark "${key}"`).toBeDefined();
+    }
+  });
+
+  it("round-trips: every alias string normalizes back to its own table entry", () => {
+    // Guards against the table keys and normalizeBenchmarkName's own
+    // canonicalization drifting apart (both go through toCanonicalBenchmarkForm).
+    for (const [alias, entry] of Object.entries(BENCHMARK_ALIASES)) {
+      expect(normalizeBenchmarkName(alias), `alias "${alias}" failed to round-trip`).toEqual(entry);
     }
   });
 });

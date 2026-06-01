@@ -16,6 +16,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const require = createRequire(import.meta.url);
+const { execFileSync } = require("child_process");
 const { BENCHMARK_META, LABS, LAB_KEYS, TIME_LABELS, compareQuarters, getPresets } = require("../lib/config.js");
 const { isHarnessVariant, isAcknowledgedConfigVariant, normalizeVariant, shouldRegenerateAnalyses, detectStreakAlerts, buildIssueLabels } = require("../lib/pipeline.js");
 
@@ -670,7 +671,6 @@ const LABEL_DEFS = {
  */
 function ensureLabelsExist(labelNames) {
   if (!labelNames.length) return;
-  const { execFileSync } = require("child_process");
 
   let existing = new Set();
   try {
@@ -707,7 +707,6 @@ function ensureLabelsExist(labelNames) {
  */
 function postGitHubIssue(title, body, labels) {
   const tmpFile = path.resolve(PROJECT_ROOT, ".pipeline-report-body.md");
-  const { execFileSync } = require("child_process");
   const labelList = (labels || "").split(",").map(s => s.trim()).filter(Boolean);
 
   try {
@@ -722,10 +721,13 @@ function postGitHubIssue(title, body, labels) {
       execFileSync("gh", args, { cwd: PROJECT_ROOT, stdio: "pipe" });
       console.log(`\n  Report posted: ${title}`);
     } catch (err) {
-      const detail = `${err.stderr ? err.stderr.toString() : ""}${err.message || ""}`;
-      const labelRelated = labelList.length > 0 && /label/i.test(detail);
+      // Classify on stderr ONLY: execFileSync's err.message echoes the full
+      // command line (which always contains the literal "--label"), so testing
+      // it would mark every failure label-related and defeat the check below.
+      const stderr = err.stderr ? err.stderr.toString() : "";
+      const labelRelated = labelList.length > 0 && /label/i.test(stderr);
       if (!labelRelated) throw err; // Not a label problem — do not mask it.
-      console.warn(`\n  Posting with labels failed (${detail.substring(0, 160)}); retrying without labels.`);
+      console.warn(`\n  Posting with labels failed (${stderr.substring(0, 160) || (err.message || "").substring(0, 160)}); retrying without labels.`);
       execFileSync("gh", baseArgs, { cwd: PROJECT_ROOT, stdio: "pipe" });
       console.log(`\n  Report posted WITHOUT labels: ${title}`);
     }
