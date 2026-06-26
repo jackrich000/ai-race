@@ -1284,6 +1284,14 @@ async function main() {
 
       rawRows.push(row);
 
+      // Every extracted score counts toward scoresExtracted — INCLUDING untracked
+      // benchmarks (which never reach articleRows below). This is the whole point:
+      // it separates "extraction broke" (0 extracted) from "lab only posted
+      // untracked benchmarks" (extracted>0, yielded=0).
+      if (pipelineStats[lab]) {
+        pipelineStats[lab].scoresExtracted++;
+      }
+
       // Per-score triage (tracked benchmarks only)
       if (normalized.key && BENCHMARK_META[normalized.key]) {
         const bestKey = `${normalized.key}|${lab}`;
@@ -1362,13 +1370,6 @@ async function main() {
     // Collect final triage results and set triage_status on raw rows
     for (const { row, result } of articleRows) {
       const summary = `${row.model} on ${row.benchmark}: ${row.score}${row.model_variant ? ` [${row.model_variant}]` : ""} (${result.action}: ${result.reason})`;
-
-      // Every row here is a score the LLM extracted from a page, regardless of
-      // triage outcome — counts toward scoresExtracted (the "extraction is alive"
-      // signal), separately from scoresYielded (tracked-and-ingested below).
-      if (pipelineStats[row.lab]) {
-        pipelineStats[row.lab].scoresExtracted++;
-      }
 
       // Map triage action to status stored in DB
       const statusMap = { ingest: "ingest", review: "flag", reject: "reject" };
