@@ -1,0 +1,8 @@
+# Migration files are hash-checked by scripts/apply-migrations.mjs against the
+# working-tree bytes (SHA-256). Pin a deterministic line ending so that hash is
+# identical on every platform and checkout, independent of each machine's
+# core.autocrlf setting. Without this, a migration applied while its working
+# copy was LF records an LF hash, but a CRLF checkout later fails the immutability
+# check ("edited after apply") — which is exactly what drifted 004 and 007.
+# Recorded hashes in schema_migrations are CRLF, so pin CRLF (no re-recording).
+migrations/*.sql text eol=crlf
