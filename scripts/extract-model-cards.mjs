@@ -932,11 +932,14 @@ async function main() {
 
   // Per-lab counters for the streak alert in run-pipeline.mjs.
   // articlesScraped: page extraction succeeded (regardless of LLM yield).
-  // scoresYielded:   triage emitted at least one ingestable score.
+  // scoresExtracted: total scores the LLM pulled from articles, before triage.
+  //                  Distinguishes "extraction broke" (0 extracted) from "lab only
+  //                  posted untracked benchmarks" (extracted>0 but yielded=0).
+  // scoresYielded:   triage emitted at least one ingestable (tracked) score.
   const pipelineStats = {};
   for (const source of LAB_SOURCES) {
     if (!pipelineStats[source.lab]) {
-      pipelineStats[source.lab] = { articlesScraped: 0, scoresYielded: 0 };
+      pipelineStats[source.lab] = { articlesScraped: 0, scoresExtracted: 0, scoresYielded: 0 };
     }
   }
 
@@ -1360,6 +1363,13 @@ async function main() {
     for (const { row, result } of articleRows) {
       const summary = `${row.model} on ${row.benchmark}: ${row.score}${row.model_variant ? ` [${row.model_variant}]` : ""} (${result.action}: ${result.reason})`;
 
+      // Every row here is a score the LLM extracted from a page, regardless of
+      // triage outcome — counts toward scoresExtracted (the "extraction is alive"
+      // signal), separately from scoresYielded (tracked-and-ingested below).
+      if (pipelineStats[row.lab]) {
+        pipelineStats[row.lab].scoresExtracted++;
+      }
+
       // Map triage action to status stored in DB
       const statusMap = { ingest: "ingest", review: "flag", reject: "reject" };
       row.triage_status = statusMap[result.action] || null;
@@ -1580,6 +1590,7 @@ async function main() {
       run_started_at: runStartIso,
       lab,
       articles_scraped: s.articlesScraped,
+      scores_extracted: s.scoresExtracted,
       scores_yielded: s.scoresYielded,
     }));
     if (runRows.length > 0) {

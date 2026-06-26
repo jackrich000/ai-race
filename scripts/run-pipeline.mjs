@@ -329,7 +329,7 @@ async function queryStreakAlerts(supabase) {
   const queries = EXTRACTED_LABS.map(async (lab) => {
     const { data, error } = await supabase
       .from("pipeline_runs")
-      .select("articles_scraped, scores_yielded, run_started_at")
+      .select("articles_scraped, scores_extracted, scores_yielded, run_started_at")
       .eq("lab", lab)
       .order("run_started_at", { ascending: false })
       .limit(STREAK_THRESHOLD);
@@ -583,6 +583,7 @@ function buildReport({ changes, flagged, rejected, unknownVariants, extractResul
   // ─── Lab Freshness ──────────────────────────────────────
   const staleLabs = labFreshness.filter(l => l.stale);
   const streakAlerts = (streak && streak.alerts) || [];
+  const streakInfo = (streak && streak.info) || [];
   const insufficientHistory = (streak && streak.insufficientHistory) || [];
   // Flatten insufficient-history into a lookup so we can render it inline.
   const insufficientByLab = new Map(insufficientHistory.map(h => [h.lab, h.runsSoFar]));
@@ -606,16 +607,31 @@ function buildReport({ changes, flagged, rejected, unknownVariants, extractResul
     parts.push("");
     parts.push(`## Streak Alerts (${streakAlerts.length})`);
     parts.push("");
-    parts.push("Labs that have shown the same failure pattern for 4 consecutive runs. Usually indicates the index scanner / scraper / extraction prompt has broken silently.");
+    parts.push("Labs that have shown the same failure pattern for 4 consecutive runs. Indicates the index scanner / scraper / extraction prompt has broken silently.");
     parts.push("");
     parts.push("| Lab | Kind | Since |");
     parts.push("|-----|------|-------|");
     for (const a of streakAlerts) {
       const kindLabel = a.kind === "no_articles"
         ? "No articles scraped — index scanner / scraper broken"
-        : "Articles scraped, no scores yielded — extraction prompt or page template drift";
+        : "Articles scraped but zero scores extracted — extraction prompt or page template drift";
       const sinceDate = a.since ? a.since.split("T")[0] : "unknown";
       parts.push(`| ${labName(a.lab)} | ${kindLabel} | ${sinceDate} |`);
+    }
+  }
+
+  // ─── Extraction Notes (soft signal, not a breakage) ─────
+  if (streakInfo.length > 0) {
+    parts.push("");
+    parts.push(`## Extraction Notes (${streakInfo.length})`);
+    parts.push("");
+    parts.push("Labs extracting scores fine for 4 consecutive runs, but none landed on a *tracked* benchmark. Usually the lab is publishing only off-benchmark posts — but if you expect a tracked score here, check for a benchmark name/alias gap.");
+    parts.push("");
+    parts.push("| Lab | Note | Since |");
+    parts.push("|-----|------|-------|");
+    for (const a of streakInfo) {
+      const sinceDate = a.since ? a.since.split("T")[0] : "unknown";
+      parts.push(`| ${labName(a.lab)} | Healthy extraction, 0 tracked-benchmark scores | ${sinceDate} |`);
     }
   }
 
@@ -953,6 +969,9 @@ async function main() {
   }
   if (streak.alerts.length > 0) {
     console.warn(`  Streak alerts: ${streak.alerts.map(a => `${labName(a.lab)} (${a.kind})`).join(", ")}`);
+  }
+  if (streak.info && streak.info.length > 0) {
+    console.log(`  Extraction notes: ${streak.info.map(a => `${labName(a.lab)} (${a.kind})`).join(", ")}`);
   }
   if (streak.insufficientHistory.length > 0) {
     console.log(`  Insufficient history: ${streak.insufficientHistory.map(h => `${labName(h.lab)} (${h.runsSoFar}/4)`).join(", ")}`);

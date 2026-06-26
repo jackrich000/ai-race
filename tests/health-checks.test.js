@@ -84,9 +84,11 @@ describe("checkSourceThresholds", () => {
 
 // ─── detectStreakAlerts ──────────────────────────────────────
 
-function row(scraped, yielded, dateStr) {
+// row(articles_scraped, scores_extracted, scores_yielded, run_started_at)
+function row(scraped, extracted, yielded, dateStr) {
   return {
     articles_scraped: scraped,
+    scores_extracted: extracted,
     scores_yielded: yielded,
     run_started_at: dateStr,
   };
@@ -95,10 +97,11 @@ function row(scraped, yielded, dateStr) {
 describe("detectStreakAlerts", () => {
   it("returns insufficient history when fewer than 4 runs exist", () => {
     const history = {
-      openai: [row(5, 10, "2026-05-07"), row(0, 0, "2026-04-30")],
+      openai: [row(5, 8, 10, "2026-05-07"), row(0, 0, 0, "2026-04-30")],
     };
     const result = detectStreakAlerts(history);
     expect(result.alerts).toEqual([]);
+    expect(result.info).toEqual([]);
     expect(result.insufficientHistory).toEqual([{ lab: "openai", runsSoFar: 2 }]);
   });
 
@@ -109,26 +112,27 @@ describe("detectStreakAlerts", () => {
     expect(result.insufficientHistory).toEqual([{ lab: "openai", runsSoFar: 0 }]);
   });
 
-  it("does not alert when one of the 4 runs is non-zero", () => {
+  it("does not alert when one of the 4 runs is healthy", () => {
     const history = {
       anthropic: [
-        row(0, 0, "2026-05-07"),
-        row(0, 0, "2026-04-30"),
-        row(2, 5, "2026-04-23"),  // breaks the streak
-        row(0, 0, "2026-04-16"),
+        row(0, 0, 0, "2026-05-07"),
+        row(0, 0, 0, "2026-04-30"),
+        row(2, 5, 5, "2026-04-23"),  // breaks the streak
+        row(0, 0, 0, "2026-04-16"),
       ],
     };
     const result = detectStreakAlerts(history);
     expect(result.alerts).toEqual([]);
+    expect(result.info).toEqual([]);
   });
 
   it("alerts on no_articles when all 4 runs have articles_scraped=0", () => {
     const history = {
       chinese: [
-        row(0, 0, "2026-05-07"),
-        row(0, 0, "2026-04-30"),
-        row(0, 0, "2026-04-23"),
-        row(0, 0, "2026-04-16"),
+        row(0, 0, 0, "2026-05-07"),
+        row(0, 0, 0, "2026-04-30"),
+        row(0, 0, 0, "2026-04-23"),
+        row(0, 0, 0, "2026-04-16"),
       ],
     };
     const result = detectStreakAlerts(history);
@@ -137,29 +141,73 @@ describe("detectStreakAlerts", () => {
     ]);
   });
 
-  it("alerts on no_scores when articles_scraped > 0 but scores_yielded = 0 for 4 runs", () => {
+  it("alerts on no_extraction when articles scraped but ZERO scores extracted for 4 runs", () => {
     const history = {
       google: [
-        row(3, 0, "2026-05-07"),
-        row(2, 0, "2026-04-30"),
-        row(1, 0, "2026-04-23"),
-        row(2, 0, "2026-04-16"),
+        row(3, 0, 0, "2026-05-07"),
+        row(2, 0, 0, "2026-04-30"),
+        row(1, 0, 0, "2026-04-23"),
+        row(2, 0, 0, "2026-04-16"),
       ],
     };
     const result = detectStreakAlerts(history);
     expect(result.alerts).toEqual([
-      { lab: "google", kind: "no_scores", since: "2026-04-16" },
+      { lab: "google", kind: "no_extraction", since: "2026-04-16" },
     ]);
+    expect(result.info).toEqual([]);
+  });
+
+  it("emits an untracked_only INFO (not an alert) when extraction is healthy but nothing is tracked", () => {
+    // The exact false-positive that fired for weeks: pages parse, the LLM pulls
+    // plenty of scores, but they're all on untracked benchmarks → yielded=0.
+    const history = {
+      openai: [
+        row(3, 12, 0, "2026-05-07"),
+        row(2, 5, 0, "2026-04-30"),
+        row(1, 3, 0, "2026-04-23"),
+        row(2, 7, 0, "2026-04-16"),
+      ],
+    };
+    const result = detectStreakAlerts(history);
+    expect(result.alerts).toEqual([]);
+    expect(result.info).toEqual([
+      { lab: "openai", kind: "untracked_only", since: "2026-04-16" },
+    ]);
+  });
+
+  it("does not flag a fully healthy lab (extracted>0 and yielded>0)", () => {
+    const history = {
+      anthropic: [
+        row(3, 12, 4, "d4"), row(2, 5, 2, "d3"), row(1, 3, 1, "d2"), row(2, 7, 3, "d1"),
+      ],
+    };
+    const result = detectStreakAlerts(history);
+    expect(result.alerts).toEqual([]);
+    expect(result.info).toEqual([]);
+  });
+
+  it("does not fire new rules on pre-migration rows where scores_extracted is null", () => {
+    // Legacy rows (articles>0, scores_yielded=0, scores_extracted=null) must NOT
+    // resurrect the old false alarm: ===0 / >0 are both false against null.
+    const legacy = (scraped, yielded, dateStr) => ({
+      articles_scraped: scraped, scores_extracted: null, scores_yielded: yielded, run_started_at: dateStr,
+    });
+    const history = {
+      google: [legacy(3, 0, "d4"), legacy(2, 0, "d3"), legacy(1, 0, "d2"), legacy(2, 0, "d1")],
+    };
+    const result = detectStreakAlerts(history);
+    expect(result.alerts).toEqual([]);
+    expect(result.info).toEqual([]);
   });
 
   it("uses only the most recent 4 runs when more history exists", () => {
     const history = {
       openai: [
-        row(0, 0, "2026-05-07"),
-        row(0, 0, "2026-04-30"),
-        row(0, 0, "2026-04-23"),
-        row(0, 0, "2026-04-16"),
-        row(5, 10, "2026-04-09"), // older non-zero — should be ignored
+        row(0, 0, 0, "2026-05-07"),
+        row(0, 0, 0, "2026-04-30"),
+        row(0, 0, 0, "2026-04-23"),
+        row(0, 0, 0, "2026-04-16"),
+        row(5, 8, 10, "2026-04-09"), // older healthy run — should be ignored
       ],
     };
     const result = detectStreakAlerts(history);
@@ -168,38 +216,41 @@ describe("detectStreakAlerts", () => {
     ]);
   });
 
-  it("does not alert no_scores if any window run has articles=0 (that's no_articles territory)", () => {
-    // Mixed: 3 runs with articles>0/scores=0, 1 run with articles=0/scores=0.
+  it("does not alert no_extraction if any window run has articles=0 (that's no_articles territory)", () => {
+    // Mixed: 3 runs with articles>0/extracted=0, 1 run with articles=0.
     // Neither pure pattern matches.
     const history = {
       xai: [
-        row(2, 0, "2026-05-07"),
-        row(1, 0, "2026-04-30"),
-        row(0, 0, "2026-04-23"),  // breaks no_scores (articles=0)
-        row(2, 0, "2026-04-16"),
+        row(2, 0, 0, "2026-05-07"),
+        row(1, 0, 0, "2026-04-30"),
+        row(0, 0, 0, "2026-04-23"),  // breaks no_extraction (articles=0)
+        row(2, 0, 0, "2026-04-16"),
       ],
     };
     const result = detectStreakAlerts(history);
     expect(result.alerts).toEqual([]);
+    expect(result.info).toEqual([]);
   });
 
-  it("alerts independently per lab", () => {
+  it("classifies independently per lab", () => {
     const history = {
-      openai: [row(0, 0, "d4"), row(0, 0, "d3"), row(0, 0, "d2"), row(0, 0, "d1")],
-      anthropic: [row(5, 10, "d4"), row(5, 10, "d3"), row(5, 10, "d2"), row(5, 10, "d1")],
-      google: [row(2, 0, "d4"), row(2, 0, "d3"), row(2, 0, "d2"), row(2, 0, "d1")],
+      openai: [row(0, 0, 0, "d4"), row(0, 0, 0, "d3"), row(0, 0, 0, "d2"), row(0, 0, 0, "d1")],
+      anthropic: [row(5, 9, 10, "d4"), row(5, 9, 10, "d3"), row(5, 9, 10, "d2"), row(5, 9, 10, "d1")],
+      google: [row(2, 0, 0, "d4"), row(2, 0, 0, "d3"), row(2, 0, 0, "d2"), row(2, 0, 0, "d1")],
+      xai: [row(2, 4, 0, "d4"), row(2, 4, 0, "d3"), row(2, 4, 0, "d2"), row(2, 4, 0, "d1")],
     };
     const result = detectStreakAlerts(history);
     expect(result.alerts).toHaveLength(2);
     expect(result.alerts.find(a => a.lab === "openai").kind).toBe("no_articles");
-    expect(result.alerts.find(a => a.lab === "google").kind).toBe("no_scores");
-    // anthropic is healthy → no alert, no insufficient history
+    expect(result.alerts.find(a => a.lab === "google").kind).toBe("no_extraction");
+    expect(result.info).toEqual([{ lab: "xai", kind: "untracked_only", since: "d1" }]);
+    // anthropic is healthy → no alert, no info, no insufficient history
     expect(result.insufficientHistory).toEqual([]);
   });
 
   it("custom streakThreshold of 2 fires after 2 zero runs", () => {
     const history = {
-      openai: [row(0, 0, "d2"), row(0, 0, "d1")],
+      openai: [row(0, 0, 0, "d2"), row(0, 0, 0, "d1")],
     };
     const result = detectStreakAlerts(history, { streakThreshold: 2 });
     expect(result.alerts).toEqual([
