@@ -1,0 +1,32 @@
+name: Supabase Keep-Alive
+
+# Free-tier Supabase pauses a project after ~7 days of low activity. The weekly
+# pipeline plus organic site traffic isn't reliably above that threshold (it just
+# triggered a pause warning), so this job issues a tiny read against the REST API
+# every day to reset the inactivity clock. Daily rather than weekly leaves slack
+# for GitHub occasionally skipping scheduled runs under load.
+
+on:
+  schedule:
+    # 06:17 UTC daily. Off-the-hour to dodge top-of-hour scheduler congestion.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping Supabase REST API
+        env:
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          URL="https://jtrhsqdfevyqzzjjvcdr.supabase.co/rest/v1/benchmark_scores?select=*&limit=1"
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' "$URL" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY")
+          echo "Supabase keep-alive ping returned HTTP $CODE"
+          if [ "$CODE" != "200" ]; then
+            echo "::error::Keep-alive ping failed (HTTP $CODE). Project may be at risk of pausing." >&2
+            exit 1
+          fi
