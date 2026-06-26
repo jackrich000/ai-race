@@ -932,11 +932,14 @@ async function main() {
 
   // Per-lab counters for the streak alert in run-pipeline.mjs.
   // articlesScraped: page extraction succeeded (regardless of LLM yield).
-  // scoresYielded:   triage emitted at least one ingestable score.
+  // scoresExtracted: total scores the LLM pulled from articles, before triage.
+  //                  Distinguishes "extraction broke" (0 extracted) from "lab only
+  //                  posted untracked benchmarks" (extracted>0 but yielded=0).
+  // scoresYielded:   triage emitted at least one ingestable (tracked) score.
   const pipelineStats = {};
   for (const source of LAB_SOURCES) {
     if (!pipelineStats[source.lab]) {
-      pipelineStats[source.lab] = { articlesScraped: 0, scoresYielded: 0 };
+      pipelineStats[source.lab] = { articlesScraped: 0, scoresExtracted: 0, scoresYielded: 0 };
     }
   }
 
@@ -1281,6 +1284,14 @@ async function main() {
 
       rawRows.push(row);
 
+      // Every extracted score counts toward scoresExtracted — INCLUDING untracked
+      // benchmarks (which never reach articleRows below). This is the whole point:
+      // it separates "extraction broke" (0 extracted) from "lab only posted
+      // untracked benchmarks" (extracted>0, yielded=0).
+      if (pipelineStats[lab]) {
+        pipelineStats[lab].scoresExtracted++;
+      }
+
       // Per-score triage (tracked benchmarks only)
       if (normalized.key && BENCHMARK_META[normalized.key]) {
         const bestKey = `${normalized.key}|${lab}`;
@@ -1580,6 +1591,7 @@ async function main() {
       run_started_at: runStartIso,
       lab,
       articles_scraped: s.articlesScraped,
+      scores_extracted: s.scoresExtracted,
       scores_yielded: s.scoresYielded,
     }));
     if (runRows.length > 0) {
