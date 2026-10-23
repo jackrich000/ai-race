@@ -1,0 +1,434 @@
+[
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q1 2023",
+  "price": null,
+  "model": null,
+  "lab": null,
+  "score": null,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q1 2024",
+  "price": 0.5,
+  "model": "Claude 3 Haiku",
+  "lab": "Anthropic",
+  "score": 37.4,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q1 2025",
+  "price": 0.058,
+  "model": "Mistral Small 3",
+  "lab": "Mistral",
+  "score": 46.2,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q1 2026",
+  "price": 0.058,
+  "model": "Mistral Small 3",
+  "lab": "Mistral",
+  "score": 46.2,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q2 2023",
+  "price": null,
+  "model": null,
+  "lab": null,
+  "score": null,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q2 2024",
+  "price": 0.5,
+  "model": "Claude 3 Haiku",
+  "lab": "Anthropic",
+  "score": 37.4,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q2 2025",
+  "price": 0.058,
+  "model": "Mistral Small 3",
+  "lab": "Mistral",
+  "score": 46.2,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q2 2026",
+  "price": 0.04,
+  "model": "Gemma 4 E4B (Reasoning)",
+  "lab": "Google",
+  "score": 57.6,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q3 2023",
+  "price": null,
+  "model": null,
+  "lab": null,
+  "score": null,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q3 2024",
+  "price": 0.262,
+  "model": "GPT-4o mini",
+  "lab": "OpenAI",
+  "score": 42.6,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q3 2025",
+  "price": 0.058,
+  "model": "Mistral Small 3",
+  "lab": "Mistral",
+  "score": 46.2,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q3 2026",
+  "price": 0.04,
+  "model": "Gemma 4 E4B (Reasoning)",
+  "lab": "Google",
+  "score": 57.6,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q4 2023",
+  "price": 15,
+  "model": "GPT-4 Turbo",
+  "lab": "OpenAI",
+  "score": 42.4,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q4 2024",
+  "price": 0.088,
+  "model": "Qwen2.5 Turbo",
+  "lab": "Alibaba",
+  "score": 41,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q4 2025",
+  "price": 0.058,
+  "model": "Mistral Small 3",
+  "lab": "Mistral",
+  "score": 46.2,
+  "threshold": 36
+ },
+ {
+  "benchmark": "gpqa",
+  "quarter": "Q4 2026",
+  "price": 0.04,
+  "model": "Gemma 4 E4B (Reasoning)",
+  "lab": "Google",
+  "score": 57.6,
+  "threshold": 36
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q1 2023",
+  "price": null,
+  "model": null,
+  "lab": null,
+  "score": null,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q1 2024",
+  "price": 15,
+  "model": "GPT-4 Turbo",
+  "lab": "OpenAI",
+  "score": 29.1,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q1 2025",
+  "price": 0.35,
+  "model": "Grok 3 mini Reasoning (High)",
+  "lab": "SpaceXAI",
+  "score": 69.6,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q1 2026",
+  "price": 0.07,
+  "model": "NVIDIA Nemotron Nano 9B V2 (Reasoning)",
+  "lab": "NVIDIA",
+  "score": 72.4,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q2 2023",
+  "price": null,
+  "model": null,
+  "lab": null,
+  "score": null,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q2 2024",
+  "price": 7.5,
+  "model": "GPT-4o (May '24)",
+  "lab": "OpenAI",
+  "score": 33.4,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q2 2025",
+  "price": 0.15,
+  "model": "Qwen3 14B (Reasoning)",
+  "lab": "Alibaba",
+  "score": 52.3,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q2 2026",
+  "price": 0.07,
+  "model": "NVIDIA Nemotron Nano 9B V2 (Reasoning)",
+  "lab": "NVIDIA",
+  "score": 72.4,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q3 2023",
+  "price": null,
+  "model": null,
+  "lab": null,
+  "score": null,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q3 2024",
+  "price": 4.375,
+  "model": "GPT-4o (Aug '24)",
+  "lab": "OpenAI",
+  "score": 31.7,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q3 2025",
+  "price": 0.07,
+  "model": "NVIDIA Nemotron Nano 9B V2 (Reasoning)",
+  "lab": "NVIDIA",
+  "score": 72.4,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q3 2026",
+  "price": 0.07,
+  "model": "NVIDIA Nemotron Nano 9B V2 (Reasoning)",
+  "lab": "NVIDIA",
+  "score": 72.4,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q4 2023",
+  "price": null,
+  "model": null,
+  "lab": null,
+  "score": null,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q4 2024",
+  "price": 0.463,
+  "model": "DeepSeek V3 (Dec '24)",
+  "lab": "DeepSeek",
+  "score": 35.9,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q4 2025",
+  "price": 0.07,
+  "model": "NVIDIA Nemotron Nano 9B V2 (Reasoning)",
+  "lab": "NVIDIA",
+  "score": 72.4,
+  "threshold": 29
+ },
+ {
+  "benchmark": "livecodebench",
+  "quarter": "Q4 2026",
+  "price": 0.07,
+  "model": "NVIDIA Nemotron Nano 9B V2 (Reasoning)",
+  "lab": "NVIDIA",
+  "score": 72.4,
+  "threshold": 29
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q1 2023",
+  "price": null,
+  "model": null,
+  "lab": null,
+  "score": null,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q1 2024",
+  "price": null,
+  "model": null,
+  "lab": null,
+  "score": null,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q1 2025",
+  "price": 0.35,
+  "model": "Grok 3 mini Reasoning (High)",
+  "lab": "SpaceXAI",
+  "score": 82.8,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q1 2026",
+  "price": 0.07,
+  "model": "NVIDIA Nemotron Nano 9B V2 (Reasoning)",
+  "lab": "NVIDIA",
+  "score": 74.2,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q2 2023",
+  "price": null,
+  "model": null,
+  "lab": null,
+  "score": null,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q2 2024",
+  "price": 6,
+  "model": "Claude 3.5 Sonnet (June '24)",
+  "lab": "Anthropic",
+  "score": 75.1,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q2 2025",
+  "price": 0.15,
+  "model": "Qwen3 14B (Reasoning)",
+  "lab": "Alibaba",
+  "score": 77.4,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q2 2026",
+  "price": 0.07,
+  "model": "NVIDIA Nemotron Nano 9B V2 (Reasoning)",
+  "lab": "NVIDIA",
+  "score": 74.2,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q3 2023",
+  "price": null,
+  "model": null,
+  "lab": null,
+  "score": null,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q3 2024",
+  "price": 6,
+  "model": "Claude 3.5 Sonnet (June '24)",
+  "lab": "Anthropic",
+  "score": 75.1,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q3 2025",
+  "price": 0.07,
+  "model": "NVIDIA Nemotron Nano 9B V2 (Reasoning)",
+  "lab": "NVIDIA",
+  "score": 74.2,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q3 2026",
+  "price": 0.07,
+  "model": "NVIDIA Nemotron Nano 9B V2 (Reasoning)",
+  "lab": "NVIDIA",
+  "score": 74.2,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q4 2023",
+  "price": null,
+  "model": null,
+  "lab": null,
+  "score": null,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q4 2024",
+  "price": 0.463,
+  "model": "DeepSeek V3 (Dec '24)",
+  "lab": "DeepSeek",
+  "score": 75.2,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q4 2025",
+  "price": 0.07,
+  "model": "NVIDIA Nemotron Nano 9B V2 (Reasoning)",
+  "lab": "NVIDIA",
+  "score": 74.2,
+  "threshold": 73
+ },
+ {
+  "benchmark": "mmlu-pro",
+  "quarter": "Q4 2026",
+  "price": 0.07,
+  "model": "NVIDIA Nemotron Nano 9B V2 (Reasoning)",
+  "lab": "NVIDIA",
+  "score": 74.2,
+  "threshold": 73
+ }
+]

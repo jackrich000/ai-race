@@ -20,10 +20,13 @@ describe("generateTimeLabels", () => {
     expect(labels[0]).toBe("Q1 2023");
   });
 
-  it("ends at current quarter", () => {
-    const now = new Date();
-    const endQ = Math.ceil((now.getMonth() + 1) / 3);
-    expect(labels[labels.length - 1]).toBe(`Q${endQ} ${now.getFullYear()}`);
+  it("ends at the snapshot quarter (site paused Oct 2026)", () => {
+    expect(labels[labels.length - 1]).toBe("Q4 2026");
+  });
+
+  it("ends at the quarter of a given date", () => {
+    const at = generateTimeLabels(new Date(2027, 4, 1));
+    expect(at[at.length - 1]).toBe("Q2 2027");
   });
 
   it("has no duplicates", () => {

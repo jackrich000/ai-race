@@ -4,6 +4,8 @@ There are great sites tracking which AI models lead today, and good periodic rep
 
 **Live site:** [ai-race.vercel.app](https://ai-race.vercel.app/)
 
+> **Paused October 2026.** The site now serves a static snapshot (`data/*.json`, exported from Supabase on 2026-10-23) and is no longer updated; the weekly pipeline and Supabase keep-alive workflows have been removed. To resume: restore the workflows and the Supabase loaders from git history, and set `SNAPSHOT_DATE` in `lib/config.js` back to `new Date()`.
+
 Tracks 5 labs (OpenAI, Anthropic, Google DeepMind, xAI, Chinese Leaders) across 10 benchmarks in three views: AI Frontier (best score across all labs), Lab Race (per-lab comparison), and Cost of Intelligence (cheapest model above a quality threshold). Data is sourced from Epoch AI, Artificial Analysis, ARC Prize, SWE-bench, Scale AI SEAL, and official model cards.
 
 ## Tech stack

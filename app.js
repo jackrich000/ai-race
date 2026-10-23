@@ -955,7 +955,7 @@ function renderChart() {
         const isPartial = context.dataset._paceIsPartial?.[context.dataIndex] === true;
         const topMovers = context.dataset._paceTopMovers?.[context.dataIndex] || {};
         const lines = [`${val.toFixed(1)} pp / quarter (avg across ${n} benchmarks)`];
-        if (isPartial) lines.push("Current quarter — in progress");
+        if (isPartial) lines.push("Final quarter — partial (snapshot 23 Oct 2026)");
 
         // Per-capability top movers in canonical order, biggest delta first.
         const moverEntries = CAPABILITIES
@@ -1675,7 +1675,7 @@ function renderInfoArea() {
     methodologyText =
       'Pace of Progress shows how fast frontier benchmark scores are moving, averaged across 16 benchmarks spanning 6 capabilities. The headline line is the average quarterly increase in best-known score; the bar chart breaks the last 12 months down by capability. ' +
       '<br><br><strong>What counts in a quarter.</strong> A benchmark contributes its frontier movement that quarter, weighted equally with every other benchmark in the cohort. Saturated benchmarks (no longer advancing) contribute zero — that is what saturation looks like, and we keep them in the cohort up to their saturation quarter so the flatline is visible. ' +
-      '<br><br><strong>Caveats.</strong> Visual Reasoning and Computer Use are anchored by a single benchmark each (MMMU-Pro and OSWorld-Verified). Their bars are outlined to flag the small sample. ARC-AGI\'s three generations occasionally co-contribute in transition quarters (Q1 2025, Q2 2026) where one version winds down as its successor spins up. The current quarter is shown dashed because it is incomplete. The line starts at Q1 2024 — earlier quarters had only one or two capabilities reporting and the comparison would be apples-to-oranges.';
+      '<br><br><strong>Caveats.</strong> Visual Reasoning and Computer Use are anchored by a single benchmark each (MMMU-Pro and OSWorld-Verified). Their bars are outlined to flag the small sample. ARC-AGI\'s three generations occasionally co-contribute in transition quarters (Q1 2025, Q2 2026) where one version winds down as its successor spins up. The final quarter (Q4 2026) is shown dashed because the snapshot ends partway through it, on 23 Oct 2026. The line starts at Q1 2024 — earlier quarters had only one or two capabilities reporting and the comparison would be apples-to-oranges.';
   } else {
     methodologyText = 'Scores use independently verified sources wherever available (Artificial Analysis, Epoch AI, ARC Prize, SWE-bench, Scale AI SEAL), shown as solid dots. Where no independent evaluation exists yet, self-reported model card scores from official lab announcements are used, shown as <strong>hollow dots</strong>.';
   }
@@ -1853,16 +1853,7 @@ async function fetchAnalysis(preset) {
   section.innerHTML = '<div class="analysis-loading-inline"><div class="spinner"></div></div>';
 
   try {
-    const url = `${SUPABASE_URL}/rest/v1/cached_analyses?date_range=eq.${encodeURIComponent(preset)}&select=analysis&limit=1`;
-    const resp = await fetch(url, {
-      headers: {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-    });
-
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const rows = await resp.json();
+    const rows = (await loadSnapshot("cached_analyses")).filter(r => r.date_range === preset);
 
     if (rows.length === 0 || !rows[0].analysis) {
       cachedAnalysis = null;
