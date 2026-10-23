@@ -1,55 +1,28 @@
 // data-loader.js
-// Fetches live benchmark data from Supabase and exposes the same
+// Loads benchmark data from the static snapshot in data/ and exposes the same
 // BENCHMARKS, COST_DATA globals that app.js expects.
 // Shared config (LABS, BENCHMARK_META, etc.) comes from lib/config.js.
 
-// ─── Supabase config (anon key is safe to expose — RLS allows read only) ───
-const SUPABASE_URL = "https://jtrhsqdfevyqzzjjvcdr.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_NW3JPCH8VQ0_ym-UFnGavw_JCVcDDp9";
-
-// ─── Data loading ───────────────────────────────────────────────
+// ─── Snapshot (site paused Oct 2026) ────────────────────────────
+// data/*.json are exports of the Supabase tables (benchmark_scores,
+// cost_intelligence, cached_analyses) taken 2026-10-23, the last pipeline run.
+// The pipeline and migrations still target Supabase; to resume live updates,
+// point these loaders back at the Supabase REST API (see git history).
 
 let BENCHMARKS = {};
 let COST_DATA = {};
 let costLoadFailed = false;
 
-async function loadBenchmarkScores() {
-  // select=* keeps this query schema-tolerant: if a new column (e.g. model_variant)
-  // hasn't been migrated yet, the query still succeeds and the field is undefined.
-  // Paginate because Supabase caps a single response at 1000 rows; we passed
-  // that threshold when the Pace cohort grew (terminal-bench-2-0, sorted last
-  // alphabetically, was being silently truncated).
-  const PAGE_SIZE = 1000;
-  const rows = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const url = `${SUPABASE_URL}/rest/v1/benchmark_scores?select=*&order=benchmark,lab,quarter&limit=${PAGE_SIZE}&offset=${offset}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-    let response;
-    try {
-      response = await fetch(url, {
-        headers: {
-          "apikey": SUPABASE_ANON_KEY,
-          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-        signal: controller.signal,
-      });
-    } catch (err) {
-      clearTimeout(timeoutId);
-      if (err.name === "AbortError") throw new Error("Request timed out");
-      throw err;
-    }
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`Supabase fetch failed: ${response.status} ${response.statusText}`);
-    }
-
-    const batch = await response.json();
-    rows.push(...batch);
-    if (batch.length < PAGE_SIZE) break;
+async function loadSnapshot(name) {
+  const response = await fetch(`data/${name}.json`);
+  if (!response.ok) {
+    throw new Error(`Snapshot fetch failed: ${response.status} ${response.statusText}`);
   }
+  return response.json();
+}
+
+async function loadBenchmarkScores() {
+  const rows = await loadSnapshot("benchmark_scores");
 
   // Build quarter → index lookup
   const quarterIndex = {};
@@ -72,7 +45,7 @@ async function loadBenchmarkScores() {
       scores[labKey] = new Array(TIME_LABELS.length).fill(null);
     }
 
-    // Fill in actual scores from Supabase (objects with score + model)
+    // Fill in actual scores from the snapshot (objects with score + model)
     const benchRows = grouped[benchKey] || [];
     for (const row of benchRows) {
       const qi = quarterIndex[row.quarter];
@@ -95,35 +68,14 @@ async function loadBenchmarkScores() {
 }
 
 async function loadCostData() {
-  const url = `${SUPABASE_URL}/rest/v1/cost_intelligence?select=benchmark,quarter,price,model,lab,score,threshold&order=benchmark,quarter`;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-  let response;
+  let rows;
   try {
-    response = await fetch(url, {
-      headers: {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-      signal: controller.signal,
-    });
+    rows = await loadSnapshot("cost_intelligence");
   } catch (err) {
-    clearTimeout(timeoutId);
-    console.warn("Cost data fetch failed:", err.name === "AbortError" ? "Request timed out" : err.message);
+    console.warn("Cost data fetch failed:", err.message);
     costLoadFailed = true;
     return;
   }
-  clearTimeout(timeoutId);
-
-  if (!response.ok) {
-    console.warn("Cost data fetch failed:", response.status);
-    costLoadFailed = true;
-    return;
-  }
-
-  const rows = await response.json();
 
   const quarterIndex = {};
   TIME_LABELS.forEach((q, i) => quarterIndex[q] = i);

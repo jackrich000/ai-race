@@ -1853,16 +1853,7 @@ async function fetchAnalysis(preset) {
   section.innerHTML = '<div class="analysis-loading-inline"><div class="spinner"></div></div>';
 
   try {
-    const url = `${SUPABASE_URL}/rest/v1/cached_analyses?date_range=eq.${encodeURIComponent(preset)}&select=analysis&limit=1`;
-    const resp = await fetch(url, {
-      headers: {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-    });
-
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const rows = await resp.json();
+    const rows = (await loadSnapshot("cached_analyses")).filter(r => r.date_range === preset);
 
     if (rows.length === 0 || !rows[0].analysis) {
       cachedAnalysis = null;

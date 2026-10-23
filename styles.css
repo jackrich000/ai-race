@@ -49,6 +49,20 @@ header h1 {
   margin-top: 0.4rem;
 }
 
+.paused-note {
+  display: inline-block;
+  margin-top: 0.9rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: var(--radius);
+  background: var(--accent-dim);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.paused-note a {
+  color: var(--accent);
+}
+
 /* Main container */
 main {
   max-width: 1200px;
